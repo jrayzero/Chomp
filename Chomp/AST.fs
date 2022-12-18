@@ -1,10 +1,6 @@
 module Chomp.AST
 
-type dtype =
-    | ScalarType of scalarType
-    | ArrayType of arrayType
-    
-and scalarType =
+type scalarType =
     | Int8 of signed:bool
     | Int16 of signed:bool
     | Int32 of signed:bool
@@ -12,44 +8,75 @@ and scalarType =
     | Float32
     | Float64
 
-and arrayType =
-    | Static of scalarType * int
-    | Heap of scalarType
-    
-type identifier = { levels: string list; kind: identifierKind }
-
-and identifierKind =
-    | SyntaxRef
-    | LocalRef
-    | ASTRef
-    | ConstantBindRef
-    | TemplateRef
+type identifier = { levels: string list }
 
 type literalType =
     | Hex
     | Decimal
     | Binary
     | Ascii
-     
+    
+// the numbers represent the precedence (copies from C)
+// we only have left-associativity, so we don't need to worry really
+// about handling things specially at the same precedence level
 type expr =
-    | Addition of expr list 
-    | Subtraction of expr list
+    // 0
+    | Callback of callback // foo(args...)
+    | ArrRef of variable * idx: expr // arr[idx]
+    // 1
+    | Invert of expr // -expr 
+    | BInvert of expr // ~expr
+    | Not of expr // !expr
+    // 2
     | Multiplication of expr list
     | Division of expr list
+    // 3
+    | Addition of expr list
+    | Subtraction of expr list
+    // 4
+    | LeftShift of expr * expr
+    | RightShift of expr * expr
+    // 5
+    | GreaterThan of bool * expr * expr
+    | LessThan of bool * expr * expr
+    // 6
+    | Equals of bool * expr list
+    // 7
+    | BAnd of expr list
+    // 8
+    | BOr of expr list
+    // 9
+    | And of expr list
+    // 10
+    | Or of expr list
+    // 11
     | Variable of variable
-    | Literal of scalarType * literalType * string
-    | Callback of callback
-    | ArrRef of variable * idx: expr // arr[idx]
+    | Literal of literalType * string
     
-and callback = { name: string; args: expr list }    
-    
-and variable = { user: identifier; fqn: identifier }
+and callback = { name: string; args: expr list }
+
+and variable =
+    { user: identifier; fqn: identifier; kind: variableKind }
+    static member Default user =
+        { user = user; fqn = user; kind = Undef }
+
+and variableKind =
+    | SyntaxRef
+    | LocalRef
+    | ASTRef
+    | ConstantBindRef
+    | TemplateRef
+    | Undef // not know yet
     
 and range =
     | Single of expr // value
     | Lower of expr // lower..
     | Upper of expr // ..upper
     | Range of lower: expr * upper: expr // lower..upper
+    
+let EqCurry kind exprs = Equals(kind, exprs)
+let LTCurry kind lhs rhs = LessThan(kind, lhs, rhs)
+let GTCurry kind lhs rhs = GreaterThan(kind, lhs, rhs)
     
 type rule =
     // transients don't have general lvalue since it doesn't make sense for an array to be transient
@@ -89,8 +116,8 @@ type stmt =
     | Pop
     
 and arrDecl =
-    | Stack of isAST: bool * identifier * int64
-    | Heap of isAST: bool * identifier    
+    | Stack of isAST: bool * identifier * scalarType * int64
+    | Heap of isAST: bool * identifier * scalarType   
     
 // Notes:
 // - Can only have decl once for a given variable in a syntax element, and it's always initialized at the top of the
