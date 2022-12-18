@@ -3,13 +3,19 @@ module Chomp.parser
 open FParsec
 open AST
 
-// TODO this uses pretty egregious backtracking in some places, but I just wanted to get it working. Clean it up at some point.
-
 // Notes:
 // |> => for combining parser generators (the normal forward pipe usage)
 // a .>> b => parse a then b, return a's result
 // a >>. b => parse a then b, return b's result
 // a .>>. b => parse a then b, return both results in tuple
+
+// Use to trace parsing (parser <!>)
+let (<!>) (p: Parser<_,_>) label : Parser<_,_> =
+    fun stream ->
+        printfn "%A: Entering %s" stream.Position label
+        let reply = p stream
+        printfn "%A: Leaving %s (%A)" stream.Position label reply.Status
+        reply
 
 // Parse out innerParser between popen and pclose in stream
 let betweenType popen pclose innerParser = (innerParser .>> spaces) |> between (skipString popen .>> spaces) (skipString pclose .>> spaces)
@@ -21,8 +27,6 @@ let argLikeList popen pclose delim innerParser =
 // like argLikeList, but without the open/close strings    
 let freeArgLikeList delim innerParser =
     sepBy (innerParser .>> spaces) (skipString delim .>> spaces)
-
-let exprParser, exprRef = createParserForwardedToRef<expr,unit>()
     
 let scalarDUT() =
     (skipString "int" >>.
@@ -55,19 +59,17 @@ let exprDU_Literal() =
     <|> (notEmpty (attempt binary |>> (fun l -> Literal(Binary, l |> System.String.Concat))))
     <|> (notEmpty (attempt ascii |>> (fun l -> Literal(Ascii, l |> System.String.Concat))))
     <|> (decimal |>> (fun l -> Literal(Decimal, l |> System.String.Concat))) // this is the last line of defense!
-
-let (<!>) (p: Parser<_,_>) label : Parser<_,_> =
-    fun stream ->
-        printfn "%A: Entering %s" stream.Position label
-        let reply = p stream
-        printfn "%A: Leaving %s (%A)" stream.Position label reply.Status
-        reply
+        
+//--------------------
+// All the expression parser stuff is mostly copied from FParsec's calculator example
+//--------------------
+let opp = OperatorPrecedenceParser<expr,unit,unit>()
 
 let exprDU_callback() =
-    singleIdentifierLevel() .>>. (argLikeList "(" ")" "," (exprParser)) |>> fun (n,l) -> Callback({name=n;args=l})
+    singleIdentifierLevel() .>>. (argLikeList "(" ")" "," (opp.ExpressionParser)) |>> fun (n,l) -> Callback({name=n;args=l})
     
 let exprDU_arrref() =
-    identifierRecord() .>>. (betweenType "[" "]" exprParser) |>> fun (n,l) -> ArrRef(variable.Default n, l)
+    identifierRecord() .>>. (betweenType "[" "]" opp.ExpressionParser) |>> fun (n,l) -> ArrRef(variable.Default n, l)
     
 let exprDU_variable() = identifierRecord() |>> fun v -> Variable(variable.Default v)    
     
@@ -78,83 +80,34 @@ let exprDU_Primitives() =
     let arrref = attempt (notEmpty (exprDU_arrref()))
     let var = notEmpty (exprDU_variable()) 
     callback <|> arrref <|> var <|> exprDU_Literal()
-    
-let exprDU_LastLevel() = notEmpty (betweenType "(" ")" exprParser) <|> exprDU_Primitives()
 
-// true binary
-let binary op next =
-    let lhs = next() .>> spaces
-    let op = skipString op .>> spaces
-    let rhs = opt (op >>. next() .>> spaces)
-    lhs .>>. rhs
-    
-let manyBinary op next =
-    let lhs = next() .>> spaces
-    let op = skipString op .>> spaces
-    let rhs = many (op >>. next() .>> spaces)
-    lhs .>>. rhs    
+opp.TermParser <- exprDU_Primitives() <|> betweenType "(" ")" opp.ExpressionParser
 
-let binaryOp op t next =
-    manyBinary op next |>>
-        fun (l,r) ->
-            if r.Length > 0 then
-                t(l::r)
-            else
-                l
-                
-// like binaryOp, but doesn't produce a list for the operands
-// uses curried function for t                
-let binaryCurryLR op t next =
-    binary op next |>>
-        fun (l,r) -> 
-            match r with
-                | Some(e) -> t l e
-                | None -> l
+opp.AddOperator(InfixOperator("||", spaces, 1, Associativity.Left, fun l r -> Or([l;r])))
+opp.AddOperator(InfixOperator("&&", spaces, 2, Associativity.Left, fun l r -> And([l;r])))
+opp.AddOperator(InfixOperator("|", spaces, 3, Associativity.Left, fun l r -> BOr([l;r])))
+opp.AddOperator(InfixOperator("&", spaces, 4, Associativity.Left, fun l r -> BAnd([l;r])))
+opp.AddOperator(InfixOperator("==", spaces, 5, Associativity.Left, fun l r -> Equals(true, [l;r])))
+opp.AddOperator(InfixOperator("!=", spaces, 5, Associativity.Left, fun l r -> Equals(false, [l;r])))
+opp.AddOperator(InfixOperator("<", spaces, 6, Associativity.Left, fun l r -> LessThan(false, l, r)))
+opp.AddOperator(InfixOperator("<=", spaces, 6, Associativity.Left, fun l r -> LessThan(true, l, r)))
+opp.AddOperator(InfixOperator(">", spaces, 6, Associativity.Left, fun l r -> GreaterThan(false, l, r)))
+opp.AddOperator(InfixOperator(">=", spaces, 6, Associativity.Left, fun l r -> GreaterThan(false, l, r)))
+opp.AddOperator(InfixOperator("<<", spaces, 7, Associativity.Left, fun l r -> LeftShift(l,r)))
+opp.AddOperator(InfixOperator(">>", spaces, 7, Associativity.Left, fun l r -> RightShift(l,r)))
+opp.AddOperator(InfixOperator("+", spaces, 8, Associativity.Left, fun l r -> Addition([l;r])))
+opp.AddOperator(InfixOperator("-", spaces, 8, Associativity.Left, fun l r -> Subtraction([l;r])))
+opp.AddOperator(InfixOperator("*", spaces, 9, Associativity.Left, fun l r -> Multiplication([l;r])))
+opp.AddOperator(InfixOperator("/", spaces, 9, Associativity.Left, fun l r -> Division([l;r])))
+opp.AddOperator(PrefixOperator("-", spaces, 10, true, Invert))
+opp.AddOperator(PrefixOperator("~", spaces, 10, true, BInvert))
+opp.AddOperator(PrefixOperator("!", spaces, 10, true, Not))
 
-// like binaryLR but just takes a DU for t                
-let binaryLR op t next =
-    binary op next |>>
-        fun (l,r) ->
-            match r with
-                | Some(e) -> t(l, e)
-                | None -> l                     
-    
-let unary op t next =
-    let lhs = opt (skipString op >>. spaces) .>>. next() |>>
-              fun (o,e) ->
-                  match o with
-                    | Some _ -> t e
-                    | None -> e
-    lhs                    
-
-let exprDU_Invert() = unary "-" Invert exprDU_LastLevel
-let exprDU_BInvert() = unary "~" BInvert exprDU_Invert
-let exprDU_Not() = unary "!" Not exprDU_BInvert
-let exprDU_Multiplication() = binaryOp "*" Multiplication exprDU_Not
-let exprDU_Division() = binaryOp "/" Division exprDU_Multiplication
-let exprDU_Addition() = binaryOp "+" Addition exprDU_Division
-let exprDU_Subtraction() = binaryOp "-" Subtraction exprDU_Addition
-let exprDU_LShift() = binaryLR "<<" LeftShift exprDU_Subtraction
-let exprDU_RShift() = binaryLR ">>" RightShift exprDU_LShift
-let exprDU_GT() = binaryCurryLR ">" (GTCurry false) exprDU_RShift
-let exprDU_GTE() = binaryCurryLR ">=" (GTCurry true) exprDU_GT
-let exprDU_LT() = binaryCurryLR "<" (LTCurry false) exprDU_GTE
-let exprDU_LTE() = binaryCurryLR "<=" (LTCurry true) exprDU_LT
-let exprDU_NotEq() = binaryOp "!=" (EqCurry false) exprDU_LTE
-let exprDU_Eq() = binaryOp "==" (EqCurry true) exprDU_NotEq
-let exprDU_BAnd() = binaryOp "&" BAnd exprDU_Eq
-let exprDU_BOr() = binaryOp "|" BOr exprDU_BAnd
-let exprDU_And() = binaryOp "&&" And exprDU_BOr
-let exprDU_Or() = binaryOp "||" Or exprDU_And
-
-let exprDU() =
-    exprDU_Or()
-    
-exprRef.Value <- exprDU()
-
+let completeExpr = spaces >>. opp.ExpressionParser
 
 let program() =
-    exprDU() .>> eof
+    completeExpr .>> eof
+    // exprDU() .>> eof
     
 let myParser code =
     eprintfn "starting"
