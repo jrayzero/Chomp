@@ -25,17 +25,16 @@ let freeArgLikeList delim innerParser =
 let exprParser, exprRef = createParserForwardedToRef<expr,unit>()
     
 let scalarDUT() =
-    // TODO is attempt the correct  hing here??
-    (attempt (skipString "int8") |>> (fun _ -> Int8(true)))
-    <|> (attempt (skipString "int16") |>> (fun _ -> Int16(true)))
-    <|> (attempt (skipString "int32") |>> (fun _ -> Int32(true)))
-    <|> (attempt (skipString "int64") |>> (fun _ -> Int64(true)))
-    <|> (attempt (skipString "uint8") |>> (fun _ -> Int8(false)))
-    <|> (attempt (skipString "uint16") |>> (fun _ -> Int16(false)))
-    <|> (attempt (skipString "uint32") |>> (fun _ -> Int32(false)))
-    <|> (attempt (skipString "uint64") |>> (fun _ -> Int64(false)))
-    <|> (attempt (skipString "float32") |>> (fun _ -> Float32))
-    <|> (attempt (skipString "float64") |>> (fun _ -> Float64))
+    (skipString "int" >>.
+        (skipString "8" |>> (fun _ -> Int8(true)))
+        <|> (skipString "16" |>> (fun _ -> Int16(true)))
+        <|> (skipString "32" |>> (fun _ -> Int32(true)))
+        <|> (skipString "64" |>> (fun _ -> Int64(true))))
+    <|> (skipString "uint" >>.
+        (skipString "8" |>> (fun _ -> Int8(false)))
+        <|> (skipString "16" |>> (fun _ -> Int16(false)))
+        <|> (skipString "32" |>> (fun _ -> Int32(false)))
+        <|> (skipString "64" |>> (fun _ -> Int64(false))))
 
 let singleIdentifierLevel() = 
     let isAsciiIdStart c = isAsciiLetter c || c = '_'
@@ -127,41 +126,35 @@ let unary op t next =
                     | Some _ -> t e
                     | None -> e
     lhs                    
-    
-let exprDU_Or() = binaryOp "||" Or exprDU_LastLevel
-let exprDU_And() = binaryOp "&&" And exprDU_Or
-let exprDU_BOr() = binaryOp "|" BOr exprDU_And
-let exprDU_BAnd() = binaryOp "&" BAnd exprDU_BOr
-let exprDU_Eq() = binaryOp "==" (EqCurry true) exprDU_BAnd
-let exprDU_NotEq() = binaryOp "!=" (EqCurry false) exprDU_Eq
-let exprDU_LTE() = binaryCurryLR "<=" (LTCurry true) exprDU_NotEq
-let exprDU_LT() = binaryCurryLR "<" (LTCurry false) exprDU_LTE
-let exprDU_GTE() = binaryCurryLR ">=" (GTCurry true) exprDU_LT
-let exprDU_GT() = binaryCurryLR ">" (GTCurry false) exprDU_GTE
-let exprDU_RShift() = binaryLR ">>" LeftShift exprDU_GT
-let exprDU_LShift() = binaryLR "<<" LeftShift exprDU_RShift
-let exprDU_Subtraction() = binaryOp "-" Subtraction exprDU_LShift
-let exprDU_Addition() = binaryOp "+" Addition exprDU_Subtraction
-let exprDU_Division() = binaryOp "/" Division exprDU_Addition
-let exprDU_Multiplication() = binaryOp "*" Multiplication exprDU_Division
-let exprDU_Not() = unary "!" Not exprDU_Multiplication
-let exprDU_BInvert() = unary "~" BInvert exprDU_Not
-let exprDU_Invert() = unary "-" Invert exprDU_BInvert
+
+let exprDU_Invert() = unary "-" Invert exprDU_LastLevel
+let exprDU_BInvert() = unary "~" BInvert exprDU_Invert
+let exprDU_Not() = unary "!" Not exprDU_BInvert
+let exprDU_Multiplication() = binaryOp "*" Multiplication exprDU_Not
+let exprDU_Division() = binaryOp "/" Division exprDU_Multiplication
+let exprDU_Addition() = binaryOp "+" Addition exprDU_Division
+let exprDU_Subtraction() = binaryOp "-" Subtraction exprDU_Addition
+let exprDU_LShift() = binaryLR "<<" LeftShift exprDU_Subtraction
+let exprDU_RShift() = binaryLR ">>" RightShift exprDU_LShift
+let exprDU_GT() = binaryCurryLR ">" (GTCurry false) exprDU_RShift
+let exprDU_GTE() = binaryCurryLR ">=" (GTCurry true) exprDU_GT
+let exprDU_LT() = binaryCurryLR "<" (LTCurry false) exprDU_GTE
+let exprDU_LTE() = binaryCurryLR "<=" (LTCurry true) exprDU_LT
+let exprDU_NotEq() = binaryOp "!=" (EqCurry false) exprDU_LTE
+let exprDU_Eq() = binaryOp "==" (EqCurry true) exprDU_NotEq
+let exprDU_BAnd() = binaryOp "&" BAnd exprDU_Eq
+let exprDU_BOr() = binaryOp "|" BOr exprDU_BAnd
+let exprDU_And() = binaryOp "&&" And exprDU_BOr
+let exprDU_Or() = binaryOp "||" Or exprDU_And
+
 let exprDU() =
-    exprDU_Invert()
+    exprDU_Or()
     
-exprRef.Value <- exprDU()    
+exprRef.Value <- exprDU()
+
 
 let program() =
-    // scalarType()
-    // identifierType() 
-    // exprDU_Literal() .>> eof
-    
-    // let lhs = opt (skipString "-" >>. spaces) >>. pint64 |>> fun y -> Invert(Literal(Decimal, sprintf "%d" y))
-    
-    // exprDU_callback() .>> eof
     exprDU() .>> eof
-    // lhs .>> eof
     
 let myParser code =
     eprintfn "starting"
