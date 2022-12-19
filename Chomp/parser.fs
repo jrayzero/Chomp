@@ -9,6 +9,12 @@ open FParsec
 // a >>. b => parse a then b, return b's result
 // a .>>. b => parse a then b, return both results in tuple
 
+// TODO there are some egregious uses of backtracking, as well as spaces
+
+let comment() = skipString "//" >>. skipRestOfLine true >>. many skipNewline
+
+let commentSpaces() = spaces .>> opt(many (comment())) 
+
 // Use to trace parsing (parser <!>)
 let (<!>) (p: Parser<_,_>) label : Parser<_,_> =
     fun stream ->
@@ -18,7 +24,7 @@ let (<!>) (p: Parser<_,_>) label : Parser<_,_> =
         reply
 
 // Parse out innerParser between popen and pclose in stream
-let betweenType popen pclose innerParser = (innerParser .>> spaces) |> between (skipString popen .>> spaces) (skipString pclose .>> spaces)
+let betweenType popen pclose innerParser = (innerParser .>> spaces) |> between (skipString popen .>> commentSpaces()) (skipString pclose .>> commentSpaces())
 
 // Parse out a list of innerParser separated by delim between popen and pclose
 let argLikeList popen pclose delim innerParser =
@@ -56,10 +62,10 @@ let identifierRecord() =
     freeArgLikeList1 "." (singleIdentifierLevel()) |>> (fun i -> {levels=i})
 
 let literalRecord() =
-    let hex = skipString "0x" >>. many1 hex .>> spaces 
-    let decimal = many1 digit .>> spaces
-    let binary = skipString "0b" >>. many1 (pstring "0" <|> pstring "1") .>> spaces
-    let ascii = betweenType "\"" "\"" (many1 asciiLetter) .>> spaces
+    let hex = skipString "0x" >>. many1 hex .>> commentSpaces() 
+    let decimal = many1 digit .>> commentSpaces()
+    let binary = skipString "0b" >>. many1 (pstring "0" <|> pstring "1") .>> commentSpaces()
+    let ascii = betweenType "\"" "\"" (many1 asciiLetter) .>> commentSpaces()
     (notEmpty (attempt hex |>> (fun l -> {lt=Hex; value=(l |> System.String.Concat).ToLower()})))
     <|> (notEmpty (attempt binary |>> (fun l -> {lt=Binary; value=l |> System.String.Concat})))
     <|> (notEmpty (attempt ascii |>> (fun l -> {lt=Ascii; value=l |> System.String.Concat})))
@@ -67,15 +73,6 @@ let literalRecord() =
     
 let exprDU_Literal() =
     literalRecord() |>> Literal
-    // notEmpty forces it to fail if it doesn't consume anything
-    // let hex = skipString "0x" >>. many1 hex .>> spaces 
-    // let decimal = many1 digit .>> spaces
-    // let binary = skipString "0b" >>. many1 (pstring "0" <|> pstring "1") .>> spaces
-    // let ascii = betweenType "\"" "\"" (many1 asciiLetter) .>> spaces
-    // (notEmpty (attempt hex |>> (fun l -> Literal({lt=Hex; value=(l |> System.String.Concat).ToLower()}))))
-    // <|> (notEmpty (attempt binary |>> (fun l -> Literal({lt=Binary; value=l |> System.String.Concat}))))
-    // <|> (notEmpty (attempt ascii |>> (fun l -> Literal({lt=Ascii; value=l |> System.String.Concat}))))
-    // <|> (decimal |>> (fun l -> Literal({lt=Decimal; value=l |> System.String.Concat}))) // this is the last line of defense!
         
 //--------------------
 // All the expression parser stuff is mostly copied from FParsec's calculator example
@@ -100,27 +97,27 @@ let exprDU_Primitives() =
 
 opp.TermParser <- exprDU_Primitives() <|> betweenType "(" ")" opp.ExpressionParser
 
-opp.AddOperator(InfixOperator("||", spaces, 1, Associativity.Left, fun l r -> Or([l;r])))
-opp.AddOperator(InfixOperator("&&", spaces, 2, Associativity.Left, fun l r -> And([l;r])))
-opp.AddOperator(InfixOperator("|", spaces, 3, Associativity.Left, fun l r -> BOr([l;r])))
-opp.AddOperator(InfixOperator("&", spaces, 4, Associativity.Left, fun l r -> BAnd([l;r])))
-opp.AddOperator(InfixOperator("==", spaces, 5, Associativity.Left, fun l r -> Equals(true, [l;r])))
-opp.AddOperator(InfixOperator("!=", spaces, 5, Associativity.Left, fun l r -> Equals(false, [l;r])))
-opp.AddOperator(InfixOperator("<", spaces, 6, Associativity.Left, fun l r -> LessThan(false, l, r)))
-opp.AddOperator(InfixOperator("<=", spaces, 6, Associativity.Left, fun l r -> LessThan(true, l, r)))
-opp.AddOperator(InfixOperator(">", spaces, 6, Associativity.Left, fun l r -> GreaterThan(false, l, r)))
-opp.AddOperator(InfixOperator(">=", spaces, 6, Associativity.Left, fun l r -> GreaterThan(false, l, r)))
-opp.AddOperator(InfixOperator("<<", spaces, 7, Associativity.Left, fun l r -> LeftShift(l,r)))
-opp.AddOperator(InfixOperator(">>", spaces, 7, Associativity.Left, fun l r -> RightShift(l,r)))
-opp.AddOperator(InfixOperator("+", spaces, 8, Associativity.Left, fun l r -> Addition([l;r])))
-opp.AddOperator(InfixOperator("-", spaces, 8, Associativity.Left, fun l r -> Subtraction([l;r])))
-opp.AddOperator(InfixOperator("*", spaces, 9, Associativity.Left, fun l r -> Multiplication([l;r])))
-opp.AddOperator(InfixOperator("/", spaces, 9, Associativity.Left, fun l r -> Division([l;r])))
-opp.AddOperator(PrefixOperator("-", spaces, 10, true, Invert))
-opp.AddOperator(PrefixOperator("~", spaces, 10, true, BInvert))
-opp.AddOperator(PrefixOperator("!", spaces, 10, true, Not))
+opp.AddOperator(InfixOperator("||", commentSpaces(), 1, Associativity.Left, fun l r -> Or([l;r])))
+opp.AddOperator(InfixOperator("&&", commentSpaces(), 2, Associativity.Left, fun l r -> And([l;r])))
+opp.AddOperator(InfixOperator("|", commentSpaces(), 3, Associativity.Left, fun l r -> BOr([l;r])))
+opp.AddOperator(InfixOperator("&", commentSpaces(), 4, Associativity.Left, fun l r -> BAnd([l;r])))
+opp.AddOperator(InfixOperator("==", commentSpaces(), 5, Associativity.Left, fun l r -> Equals(true, [l;r])))
+opp.AddOperator(InfixOperator("!=", commentSpaces(), 5, Associativity.Left, fun l r -> Equals(false, [l;r])))
+opp.AddOperator(InfixOperator("<", commentSpaces(), 6, Associativity.Left, fun l r -> LessThan(false, l, r)))
+opp.AddOperator(InfixOperator("<=", commentSpaces(), 6, Associativity.Left, fun l r -> LessThan(true, l, r)))
+opp.AddOperator(InfixOperator(">", commentSpaces(), 6, Associativity.Left, fun l r -> GreaterThan(false, l, r)))
+opp.AddOperator(InfixOperator(">=", commentSpaces(), 6, Associativity.Left, fun l r -> GreaterThan(false, l, r)))
+opp.AddOperator(InfixOperator("<<", commentSpaces(), 7, Associativity.Left, fun l r -> LeftShift(l,r)))
+opp.AddOperator(InfixOperator(">>", commentSpaces(), 7, Associativity.Left, fun l r -> RightShift(l,r)))
+opp.AddOperator(InfixOperator("+", commentSpaces(), 8, Associativity.Left, fun l r -> Addition([l;r])))
+opp.AddOperator(InfixOperator("-", commentSpaces(), 8, Associativity.Left, fun l r -> Subtraction([l;r])))
+opp.AddOperator(InfixOperator("*", commentSpaces(), 9, Associativity.Left, fun l r -> Multiplication([l;r])))
+opp.AddOperator(InfixOperator("/", commentSpaces(), 9, Associativity.Left, fun l r -> Division([l;r])))
+opp.AddOperator(PrefixOperator("-", commentSpaces(), 10, true, Invert))
+opp.AddOperator(PrefixOperator("~", commentSpaces(), 10, true, BInvert))
+opp.AddOperator(PrefixOperator("!", commentSpaces(), 10, true, Not))
 
-let exprDU() = spaces >>. opp.ExpressionParser
+let exprDU() = commentSpaces() >>. opp.ExpressionParser
 
 let rangeDU_Single() = pint64 |>> Single
 let rangeDU_Lower() = pint64 .>> skipString ".." .>> spaces |>> Lower
@@ -155,15 +152,15 @@ let rvalueDU() =
     <|> rvalueDU_Expr()
 
 let ruleDU_PersistentLValue() =
-    lvalueDU() .>> skipString ":=" .>> spaces .>>. rvalueDU() .>> skipString ";" .>> spaces |>> PersistentLValue
+    lvalueDU() .>> skipString ":=" .>> commentSpaces() .>>. rvalueDU() .>> skipString ";" .>> commentSpaces()  |>> PersistentLValue
     
 let ruleDU_TransientLValue() =
-    skipString "!" >>. identifierRecord() .>> skipString ":=" .>> spaces .>>. rvalueDU() .>> skipString ";" .>> spaces
+    skipString "!" >>. identifierRecord() .>> skipString ":=" .>> commentSpaces() .>>. rvalueDU() .>> skipString ";" .>> commentSpaces() 
         |>> TransientLValue
         
 let ruleDU_BindingLValue() =
     skipString "&" >>. (singleIdentifierLevel() .>> spaces |>> fun i -> {levels=[i]}) .>>
-        skipString ":=" .>> spaces .>>. rvalueDU() .>> skipString ";" .>> spaces |>> BindingLValue       
+        skipString ":=" .>> commentSpaces() .>>. rvalueDU() .>> skipString ";" .>> commentSpaces()  |>> BindingLValue       
     
 let ruleDU() =
     ruleDU_PersistentLValue() <|> ruleDU_TransientLValue() <|> ruleDU_BindingLValue()
@@ -184,7 +181,7 @@ let arrDecls() =
     let stackLocal = scalarDUT()
                 .>>. arraySz .>> spaces .>>. singleIdentifierLevel() .>> spaces 
                      |>> fun ((t,v),i) -> Stack(false, {levels=[i]}, t, v)                      
-    (attempt (heapAST <|> heapLocal) <|> (stackAST <|> stackLocal)) .>> spaces .>> skipString ";"                     
+    (attempt (heapAST <|> heapLocal) <|> (stackAST <|> stackLocal)) .>> spaces .>> skipString ";"  .>> commentSpaces()                    
     
 let stmtParser,stmtRef = createParserForwardedToRef()
 
@@ -192,21 +189,28 @@ let stmtDU_Rule() = ruleDU() |>> Rule
 
 let stmtDU_For() =
     let induction = skipString "for" >>. spaces1 >>. singleIdentifierLevel() |>> (fun i -> {levels=[i]}) .>> spaces
-    let range = skipString "in" >>. exprDU() .>> spaces .>> skipString "to" .>> spaces1 .>>. exprDU() .>> spaces
+    let range = skipString "in" >>. spaces1 >>. exprDU() .>> spaces .>> skipString "to" .>> spaces1 .>>. exprDU() .>> spaces
     let body = betweenType "{" "}" (many stmtParser |>> Suite)
-    let loop = induction .>>. range .>>. body .>> spaces
+    let loop = induction .>>. range .>>. body .>> commentSpaces()
     loop |>> fun ((induc,(lower,upper)),body) -> For(induc,lower,upper,body)
     
 let stmtDU_If() =
     let ifPart = skipString "if" >>. spaces1 >>. exprDU() .>>. betweenType "{" "}" (many stmtParser)
-    let elsePart = opt (spaces >>. skipString "else" >>. spaces >>. betweenType "{" "}" (many stmtParser))
-    let ifElse = ifPart .>>. elsePart .>> spaces
+    let elsePart = opt (spaces >>. skipString "else" >>. commentSpaces() >>. betweenType "{" "}" (many stmtParser))
+    let ifElse = ifPart .>>. elsePart .>> commentSpaces()
     ifElse |>> fun ((cond,iBody),eBody) ->
         match eBody with
             | Some(l) -> IfElse(cond, Suite(iBody), Some(Suite(l)))
             | None -> IfElse(cond, Suite(iBody), None)
 
-let markerDU() = literalRecord() |>> fun lit -> {matchAgainst=lit}
+let markerDU_LiteralMarker() =
+    literalRecord() |>> LiteralMarker
+    
+let markerDU_ConstantMarker() =
+    identifierRecord() |>> fun i -> ConstantMarker(variable.Default i)
+    
+let markerDU() =
+    markerDU_LiteralMarker() <|> markerDU_ConstantMarker()
 
 let markerBody() = skipString "marker" >>. spaces1 >>. markerDU() .>> spaces .>>. betweenType "{" "}" ((many stmtParser) |>> Suite)
 
@@ -214,10 +218,10 @@ let stmtDU_Alternate() =
     skipString "alternate" >>. spaces1 >>. betweenType "{" "}" (many1 (markerBody())) |>> Alternate
             
 let stmtDU_Push() =
-    skipString "push" >>. spaces1 >>. exprDU() .>>. exprDU() .>>. exprDU() .>> spaces .>> skipString ";" .>> spaces
+    skipString "push" >>. spaces1 >>. exprDU() .>>. exprDU() .>>. exprDU() .>> spaces .>> skipString ";" .>> commentSpaces() 
         |>> fun ((buff,lower),upper) -> Push(buff,lower,upper)
 
-let stmtDU_Pop() = skipString "pop" .>> spaces .>> skipString ";" .>> spaces |>> fun _ -> Pop
+let stmtDU_Pop() = skipString "pop" .>> spaces .>> skipString ";" .>> commentSpaces()  |>> fun _ -> Pop
 
 let stmtDU() =
     let p = stmtDU_For() <|> stmtDU_If() <|> stmtDU_Alternate() <|> stmtDU_Push() <|> stmtDU_Pop() <|> stmtDU_Rule()
@@ -226,9 +230,9 @@ let stmtDU() =
     
 let elementDU_Syntax() =
     let decl =
-        skipString "syntax" >>. spaces1 >>. singleIdentifierLevel() .>> spaces |>> fun i -> {levels=[i]}
+        skipString "syntax" >>. spaces1 >>. singleIdentifierLevel() .>> commentSpaces() |>> fun i -> {levels=[i]}
     let stmts = spaces >>. (many (stmtDU()))
-    let arrs = spaces >>. opt (skipString "arrDecls" >>. spaces >>. betweenType "{" "}" (many (arrDecls())))
+    let arrs = spaces >>. opt (skipString "arrDecls" >>. commentSpaces() >>. betweenType "{" "}" (many (arrDecls())))
     let body = betweenType "{" "}" (arrs .>>. stmts)
     decl .>>. body |>> fun (id,(arrs,body)) ->
         match arrs with
@@ -239,7 +243,7 @@ let elementDU_Template() =
     let decl =
         skipString "template" >>. spaces1 >>. (singleIdentifierLevel() .>> spaces |>> fun i -> {levels=[i]}) .>>. argLikeList "(" ")" "," (identifierRecord())
     let stmts = spaces >>. (many (stmtDU()))
-    let arrs = spaces >>. opt (skipString "arrDecls" >>. spaces >>. betweenType "{" "}" (many (arrDecls())))
+    let arrs = spaces >>. opt (skipString "arrDecls" >>. commentSpaces() >>. betweenType "{" "}" (many (arrDecls())))
     let body = betweenType "{" "}" (arrs .>>. stmts)
     decl .>>. body |>> fun ((id,bindings),(arrs,body)) ->
         match arrs with
@@ -248,13 +252,13 @@ let elementDU_Template() =
     
 let elementDU_Constant() =
     skipString "constant" >>. spaces1 >>. (singleIdentifierLevel() |>> fun i -> {levels=[i]})
-        .>>. (spaces >>. skipString ":=" >>. spaces >>. literalRecord() .>> spaces .>> skipString ";" .>> spaces) |>> Constant
+        .>>. (spaces >>. skipString ":=" >>. commentSpaces() >>. literalRecord() .>> commentSpaces() .>> skipString ";" .>> commentSpaces()) |>> Constant
     
 let elementDU() =
     elementDU_Template() <|> elementDU_Syntax() <|> elementDU_Constant()
     
 let programDU() =
-    many (elementDU()) |>> Program
+    commentSpaces() >>. many (elementDU()) |>> Program
     
 let parseIt code =
     eprintfn "starting"

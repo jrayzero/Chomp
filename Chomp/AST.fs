@@ -6,6 +6,10 @@ module Chomp.AST
 // (arrays, scalars, and nested syntax)
 // If it's not found, then the constants are checked. If it's still not found, then it's invalid
 
+
+// bist are parsed from msb to lsb, which is the most common
+// we handle the bit packing for you
+
 // TODO use unique pointers for holding the nested structures
 
 type scalarType =
@@ -136,7 +140,9 @@ and stmt =
     | Pop
     
 // backtracks    
-and marker = { matchAgainst: literal }
+and marker =
+    | LiteralMarker of literal
+    | ConstantMarker of variable // compiler checks that it is a constant!
     
 and arrDecl =
     | Stack of isAST: bool * identifier * scalarType * int64

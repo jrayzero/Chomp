@@ -9,7 +9,7 @@ let enterParse (code: string list) =
         eprintfn "Expected code to parse!"
         1
     else
-        parseIt (code |> String.concat "")
+        parseIt (code |> String.concat "\n")
         0    
 
 [<EntryPoint>]
