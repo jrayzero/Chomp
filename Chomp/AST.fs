@@ -7,8 +7,10 @@ module Chomp.AST
 // If it's not found, then the constants are checked. If it's still not found, then it's invalid
 
 
-// bist are parsed from msb to lsb, which is the most common
+// bits are parsed from msb to lsb, which is the most common
 // we handle the bit packing for you
+
+// built-ins
 
 // TODO use unique pointers for holding the nested structures
 
@@ -65,7 +67,7 @@ type expr =
     | Variable of variable
     | Literal of literal
     
-and literal = { lt : literalType; value: string}    
+and literal = { lit : literalType; value: string}    
     
 and callback = { name: identifier; args: expr list }
 
@@ -97,6 +99,7 @@ type rule =
     // the array doesn't need persistent b/c that is handled in the arrdecls range
     // you need it for scalars since we don't pre-declare those
     | PersistentLValue of lvalue * rvalue // ^x/x/x[idx] := rvalue;
+    // Lets you just skip over it. Require a name though to make it clearer what you're parsing
     | TransientLValue of identifier * rvalue // !x := rvalue;
     | BindingLValue of identifier * rvalue // &x := rvalue; only for use in templates--references the binding list
     
@@ -120,6 +123,7 @@ type element =
     //   arrDecls { ... }
     //   ...rules...
     // }
+    // cannot contain AST rules
     | Template of identifier * bindings: identifier list * arrDecl list * body: stmt
     // constant SOS := <literal>;
     | Constant of identifier * literal

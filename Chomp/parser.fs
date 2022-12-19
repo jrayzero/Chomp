@@ -66,10 +66,10 @@ let literalRecord() =
     let decimal = many1 digit .>> commentSpaces()
     let binary = skipString "0b" >>. many1 (pstring "0" <|> pstring "1") .>> commentSpaces()
     let ascii = betweenType "\"" "\"" (many1 asciiLetter) .>> commentSpaces()
-    (notEmpty (attempt hex |>> (fun l -> {lt=Hex; value=(l |> System.String.Concat).ToLower()})))
-    <|> (notEmpty (attempt binary |>> (fun l -> {lt=Binary; value=l |> System.String.Concat})))
-    <|> (notEmpty (attempt ascii |>> (fun l -> {lt=Ascii; value=l |> System.String.Concat})))
-    <|> (decimal |>> (fun l -> {lt=Decimal; value=l |> System.String.Concat})) // this is the last line of defense!
+    (notEmpty (attempt hex |>> (fun l -> {lit=Hex; value=(l |> System.String.Concat).ToLower()})))
+    <|> (notEmpty (attempt binary |>> (fun l -> {lit=Binary; value=l |> System.String.Concat})))
+    <|> (notEmpty (attempt ascii |>> (fun l -> {lit=Ascii; value=l |> System.String.Concat})))
+    <|> (decimal |>> (fun l -> {lit=Decimal; value=l |> System.String.Concat})) // this is the last line of defense!
     
 let exprDU_Literal() =
     literalRecord() |>> Literal
