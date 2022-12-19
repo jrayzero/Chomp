@@ -1,5 +1,13 @@
 module Chomp.AST
 
+// Scoping:
+// All variables are element-scoped (i.e. within Template or Syntax). This emans we can pre-gather all the variables.
+// If you use a variable somewhere that's not an lvalue, it's first checked against the element-scoped variables
+// (arrays, scalars, and nested syntax)
+// If it's not found, then the constants are checked. If it's still not found, then it's invalid
+
+// TODO use unique pointers for holding the nested structures
+
 type scalarType =
     | Int8 of signed:bool
     | Int16 of signed:bool
@@ -51,73 +59,90 @@ type expr =
     | Or of expr list
     // 11
     | Variable of variable
-    | Literal of literalType * string
+    | Literal of literal
     
-and callback = { name: string; args: expr list }
+and literal = { lt : literalType; value: string}    
+    
+and callback = { name: identifier; args: expr list }
 
 and variable =
-    { user: identifier; fqn: identifier; kind: variableKind }
+    { user: identifier; fqn: identifier }
     static member Default user =
-        { user = user; fqn = user; kind = Undef }
+        { user = user; fqn = user }
 
-and variableKind =
-    | SyntaxRef
-    | LocalRef
-    | ASTRef
-    | ConstantBindRef
-    | TemplateRef
-    | Undef // not know yet
-    
-and range =
-    | Single of expr // value
-    | Lower of expr // lower..
-    | Upper of expr // ..upper
-    | Range of lower: expr * upper: expr // lower..upper
-    
-let EqCurry kind exprs = Equals(kind, exprs)
-let LTCurry kind lhs rhs = LessThan(kind, lhs, rhs)
-let GTCurry kind lhs rhs = GreaterThan(kind, lhs, rhs)
-    
+// and variableKind =
+    // | SyntaxRef
+    // | TemplateRef
+    // | LocalRef
+    // | ASTRef
+    // | TemplateBinding
+    // | Constant
+    // | Undef // not know yet
+
+// used for ParseAndVAlidate    
+type range =
+    | Single of int64 // value
+    | Lower of int64 // lower..
+    | Upper of int64 // ..upper
+    | Range of lower: int64 * upper: int64 // lower..upper
+
+// TODO I want ^ to be @, but that seems to cause issues with just reading in the actual dotnet command line (@ might be special?)
+// these are decls, but are assignments
 type rule =
     // transients don't have general lvalue since it doesn't make sense for an array to be transient
-    | PersistentLValue of lvalue * rvalue // @x/x/@x[idx]/x[idx] := rvalue
-    | TransientLValue of identifier * rvalue // !x := rvalue
-    | PersistentChoice of lvalue * rvalue list // @x = rvalue0 / rvalue1 / ...
-    | TransientChoice of identifier * rvalue list // !x = rvalue0 / rvalue1 / ...
+    // the array doesn't need persistent b/c that is handled in the arrdecls range
+    // you need it for scalars since we don't pre-declare those
+    | PersistentLValue of lvalue * rvalue // ^x/x/x[idx] := rvalue;
+    | TransientLValue of identifier * rvalue // !x := rvalue;
+    | BindingLValue of identifier * rvalue // &x := rvalue; only for use in templates--references the binding list
     
 and lvalue =
-    | ScalarL of isAST: bool * identifier // x or @x
-    | ArrL of isAST: bool * identifier * expr // x[idx] or @x[idx]
+    | ScalarL of isAST: bool * identifier // x or ^x
+    | ArrL of identifier * expr // x[idx]
     
 // determines the type of the lvalue     
 and rvalue =
-    | ParseOnly of scalarType * expr // [20] or [SyntaxGroup/template/constant] if lvalue is a storage, keep the value, otherwise just skip
-    | ParseAndValidate of scalarType * expr * rhs: range list // [20=0..2,10,] parse the value and then compare to the rhs possibilities
+    | ParseOnly of expr // [20] or [SyntaxGroup/template/constant] if lvalue is a storage, keep the value, otherwise just toss it
+    | ParseAndValidate of expr * rhs: range list // [20]{0..2,10} parse the value and then compare to the rhs possibilities
     | Expr of expr // a + b, lets you just assign to some arbitrary expr
     
-type stmt =
-    // syntax ident
-    // ...arrayDecls...;
-    // ...rules...;
-    // end
-    | SyntaxGroup of identifier * arrDecl list * body: stmt
-    // template ident
-    // ...arrayDecls...;
-    // ...bindings...;
-    // end
+type element =
+    // syntax ident {
+    //   arrDecls { }
+    //   ...rules...
+    // }
+    | Syntax of identifier * arrDecl list * body: stmt
+    // template ident(bindings...) {
+    //   arrDecls { ... }
+    //   ...rules...
+    // }
     | Template of identifier * bindings: identifier list * arrDecl list * body: stmt
-    | ConstantBind of identifier * rvalue // $ident <- rvalue  
-    | Assignment of variable * expr
+    // constant SOS := <literal>;
+    | Constant of identifier * literal
+    
+and stmt =
+    | Rule of rule
+    // for i in lower to upper { body }
     | For of induc: identifier * lower: expr * upper: expr * body: stmt
-    | While of cond: expr * body: stmt
-    | IfElse of cond: expr * body: stmt
+    // if cond { } [else { }]
+    | IfElse of cond: expr * tBody: stmt * fBody: option<stmt>
+    // alternate { marker <marker> { } marker <marker> { } }
+    | Alternate of (marker * stmt) list
+    // just a list of stmts. not parsed individually
     | Suite of stmt list
-    | Push of buffer: callback * lower: expr * upper: expr // push getBuffer() lower upper
+    // push getBuffer() lower upper;
+    | Push of buffer: expr * lower: expr * upper: expr
+    // pop;
     | Pop
+    
+// backtracks    
+and marker = { matchAgainst: literal }
     
 and arrDecl =
     | Stack of isAST: bool * identifier * scalarType * int64
-    | Heap of isAST: bool * identifier * scalarType   
+    | Heap of isAST: bool * identifier * scalarType
+    
+type program = Program of element list    
     
 // Notes:
 // - Can only have decl once for a given variable in a syntax element, and it's always initialized at the top of the

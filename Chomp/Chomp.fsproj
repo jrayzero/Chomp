@@ -6,8 +6,10 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <Compile Include="Program.fs" />
         <Compile Include="AST.fs" />
+        <Compile Include="parser.fs" />
+        <Compile Include="Program.fs" />
+        <Content Include="sampleSyntax.txt" />
     </ItemGroup>
 
     <ItemGroup>
