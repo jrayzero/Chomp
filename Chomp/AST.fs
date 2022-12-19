@@ -110,13 +110,13 @@ type element =
     //   arrDecls { }
     //   ...rules...
     // }
-    | Syntax of identifier * arrDecl list * body: stmt
+    | Syntax of string * arrDecl list * body: stmt
     // template ident(bindings...) {
     //   arrDecls { ... }
     //   ...rules...
     // }
     // cannot contain AST rules
-    | Template of identifier * bindings: binding list * arrDecl list * body: stmt
+    | Template of string * bindings: binding list * arrDecl list * body: stmt
     // constant SOS := <literal>;
     | Constant of string * literal
     

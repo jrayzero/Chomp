@@ -233,7 +233,7 @@ let stmtDU() =
     
 let elementDU_Syntax() =
     let decl =
-        skipString "syntax" >>. spaces1 >>. singleIdentifierLevel() .>> commentSpaces() |>> fun i -> {levels=[i]}
+        skipString "syntax" >>. spaces1 >>. singleIdentifierLevel() .>> commentSpaces() 
     let stmts = spaces >>. (many (spaces >>. stmtDU()))
     let arrs = spaces >>. opt (skipString "arrDecls" >>. commentSpaces() >>. betweenType "{" "}" (many (arrDecls())))
     let body = betweenType "{" "}" (arrs .>>. stmts)
@@ -255,7 +255,7 @@ let templateBinding() =
     
 let elementDU_Template() =
     let decl =
-        skipString "template" >>. spaces1 >>. (singleIdentifierLevel() .>> spaces |>> fun i -> {levels=[i]}) .>>. argLikeList "(" ")" "," (templateBinding())
+        skipString "template" >>. spaces1 >>. (singleIdentifierLevel() .>> spaces) .>>. argLikeList "(" ")" "," (templateBinding())
     let stmts = spaces >>. (many (stmtDU()))
     let arrs = spaces >>. opt (skipString "arrDecls" >>. commentSpaces() >>. betweenType "{" "}" (many (arrDecls())))
     let body = betweenType "{" "}" (arrs .>>. stmts)

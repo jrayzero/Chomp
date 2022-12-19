@@ -108,12 +108,10 @@ type ConstVisitor() =
                     
     default this.visitElement x =
         match x with
-            | Syntax(i, arr, body) ->
-                this.visitIdentifier i
+            | Syntax(_, arr, body) ->
                 arr |> List.iter this.visitArrDecl
                 this.visitStmt body
-            | Template(i, bindings, arr, body) ->
-                this.visitIdentifier i
+            | Template(_, bindings, arr, body) ->
                 bindings |> List.iter this.visitBinding
                 arr |> List.iter this.visitArrDecl
                 this.visitStmt body
@@ -302,15 +300,15 @@ type Rebuilder() =
                 
     default this.visitElement x =
         match x with
-            | Syntax(i, arr, body) ->
+            | Syntax(name, arr, body) ->
                 Syntax(
-                    this.visitIdentifier i,
+                    name,
                     arr |> List.map this.visitArrDecl,
                     this.visitStmt body
                     )
-            | Template(i, bindings, arr, body) ->
+            | Template(name, bindings, arr, body) ->
                 Template(
-                    this.visitIdentifier i,
+                    name,
                     bindings |> List.map this.visitBinding,
                     arr |> List.map this.visitArrDecl,
                     this.visitStmt body

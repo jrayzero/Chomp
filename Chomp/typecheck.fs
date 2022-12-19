@@ -97,6 +97,8 @@ type typedConstant =
 // check variables exist at some level!
 // arithmeticVars don't contain any array vars (b/c that means they are unindexed!)
 // parsed elems/constant markers exist
+// syntax and templates have different names
+// any varible/binding names don't match syntax/template names
 
 type LOTLConstants() =
     inherit ConstVisitor()
@@ -176,10 +178,8 @@ type LOTLTemplates() =
     
     override this.visitElement x =
         match x with
-            | Template(i,b,arrs,body) ->
-                templateName <- i.levels |> String.concat "."
-                if i.levels.Length > 1 then
-                    failwith (sprintf "Cannot have compound name for template definition (got \"%s\")." templateName)
+            | Template(name,b,arrs,body) ->
+                templateName <- name
                 if not (allNames.Add templateName) then
                     failwith (sprintf "Multiplate Templates found with same name (got \"%s\")." templateName)
                 bindings.Clear()
@@ -355,10 +355,8 @@ type LOTLSyntaxes() =
     
     override this.visitElement x =
         match x with
-            | Syntax(i,arrs,body) ->
-                syntaxName <- i.levels |> String.concat "."
-                if i.levels.Length > 1 then
-                    failwith (sprintf "Cannot have compound name for template definition (got \"%s\")." syntaxName)
+            | Syntax(name,arrs,body) ->
+                syntaxName <- name
                 if not (allNames.Add syntaxName) then
                     failwith (sprintf "Multiplate Syntaxes found with same name (got \"%s\")." syntaxName)
                 arrDecls.Clear()
