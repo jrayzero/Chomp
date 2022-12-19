@@ -42,6 +42,9 @@ let scalarDUT() =
         <|> (skipString "16" |>> (fun _ -> Int16(false)))
         <|> (skipString "32" |>> (fun _ -> Int32(false)))
         <|> (skipString "64" |>> (fun _ -> Int64(false))))
+    <|> (skipString "float" >>.
+         (skipString "32" |>> (fun _ -> Float32))
+         <|> (skipString "64" |>> (fun _ -> Float64)))
 
 let singleIdentifierLevel() = 
     let isAsciiIdStart c = isAsciiLetter c || c = '_'
@@ -189,7 +192,7 @@ let stmtDU_Rule() = ruleDU() |>> Rule
 
 let stmtDU_For() =
     let induction = skipString "for" >>. spaces1 >>. singleIdentifierLevel() |>> (fun i -> {levels=[i]}) .>> spaces
-    let range = skipString "in" >>. exprDU() .>> spaces1 .>> skipString "to" .>> spaces1 .>>. exprDU() .>> spaces
+    let range = skipString "in" >>. exprDU() .>> spaces .>> skipString "to" .>> spaces1 .>>. exprDU() .>> spaces
     let body = betweenType "{" "}" (many stmtParser |>> Suite)
     let loop = induction .>>. range .>>. body .>> spaces
     loop |>> fun ((induc,(lower,upper)),body) -> For(induc,lower,upper,body)
@@ -225,17 +228,23 @@ let elementDU_Syntax() =
     let decl =
         skipString "syntax" >>. spaces1 >>. singleIdentifierLevel() .>> spaces |>> fun i -> {levels=[i]}
     let stmts = spaces >>. (many (stmtDU()))
-    let arrs = spaces >>. skipString "arrDecls" >>. spaces >>. betweenType "{" "}" (many (arrDecls()))
+    let arrs = spaces >>. opt (skipString "arrDecls" >>. spaces >>. betweenType "{" "}" (many (arrDecls())))
     let body = betweenType "{" "}" (arrs .>>. stmts)
-    decl .>>. body |>> fun (id,(arrs,body)) -> Syntax(id,arrs,Suite(body))
+    decl .>>. body |>> fun (id,(arrs,body)) ->
+        match arrs with
+            | Some(a) -> Syntax(id,a,Suite(body))
+            | None -> Syntax(id,[],Suite(body))
     
 let elementDU_Template() =
     let decl =
         skipString "template" >>. spaces1 >>. (singleIdentifierLevel() .>> spaces |>> fun i -> {levels=[i]}) .>>. argLikeList "(" ")" "," (identifierRecord())
     let stmts = spaces >>. (many (stmtDU()))
-    let arrs = spaces >>. skipString "arrDecls" >>. spaces >>. betweenType "{" "}" (many (arrDecls()))
+    let arrs = spaces >>. opt (skipString "arrDecls" >>. spaces >>. betweenType "{" "}" (many (arrDecls())))
     let body = betweenType "{" "}" (arrs .>>. stmts)
-    decl .>>. body |>> fun ((id,bindings),(arrs,body)) -> Template(id,bindings,arrs,Suite(body))
+    decl .>>. body |>> fun ((id,bindings),(arrs,body)) ->
+        match arrs with
+            | Some(a) -> Template(id,bindings,a,Suite(body))
+            | None -> Template(id,bindings,[],Suite(body))
     
 let elementDU_Constant() =
     skipString "constant" >>. spaces1 >>. (singleIdentifierLevel() |>> fun i -> {levels=[i]})
