@@ -30,6 +30,9 @@ let betweenType popen pclose innerParser = (innerParser .>> spaces) |> between (
 let argLikeList popen pclose delim innerParser =
     sepBy (innerParser .>> spaces) (skipString delim .>> spaces) |> betweenType popen pclose
     
+let argLikeList1 popen pclose delim innerParser =
+    sepBy1 (innerParser .>> spaces) (skipString delim .>> spaces) |> betweenType popen pclose    
+    
 // like argLikeList, but without the open/close strings    
 let freeArgLikeList delim innerParser =
     sepBy (innerParser .>> spaces) (skipString delim .>> spaces)
@@ -135,52 +138,52 @@ let lvalueDU_ScalarL () =
     
 let lvalueDU_ArrL () =
     // skipString "^" >>. identifierRecord() .>>. (betweenType "[" "]" opp.ExpressionParser) |>> fun (n,l) -> ArrL(true, n, l)
-    identifierRecord() .>>. (betweenType "[" "]" opp.ExpressionParser) |>> fun (n,l) -> ArrL(n, l)
+    identifierRecord() .>>. (betweenType "[" "]" opp.ExpressionParser) |>> ArrL
     
 let lvalueDU() =
     attempt (notEmpty (lvalueDU_ArrL())) <|> lvalueDU_ScalarL()
     
-let rvalueDU_ParseOnly() = betweenType "[" "]" (exprDU()) |>> ParseOnly
-let rvalueDU_ParseAndValidate() =
-    (betweenType "[" "]" (exprDU())) .>>. betweenType "{" "}" (freeArgLikeList1 "," (rangeDU())) |>> ParseAndValidate
+let parsingRValueDU_ParseBits() = betweenType "[" "]" (exprDU()) |>> ParseBits
+let parsingRValueDU_ParseBitsAndValidate() =
+    (betweenType "[" "]" (exprDU())) .>>. (argLikeList1 "{" "}" "," (rangeDU())) |>> ParseBitsAndValidate  
+let parsingRValueDU_ParseElement() =
+    (betweenType "<" ">" (identifierRecord() |>> ParseElement))
+let parsingRValueDU() =
+    attempt (parsingRValueDU_ParseBitsAndValidate())
+    <|> parsingRValueDU_ParseBits()
+    <|> parsingRValueDU_ParseElement()
     
 let rvalueDU_Expr() = exprDU() |>> Expr
 
 let rvalueDU() =
-    attempt (notEmpty (rvalueDU_ParseAndValidate()))
-    <|> rvalueDU_ParseOnly()
-    <|> rvalueDU_Expr()
+    ((parsingRValueDU() |>> ParsingRValue) <|> rvalueDU_Expr()) .>> commentSpaces()
 
 let ruleDU_PersistentLValue() =
     lvalueDU() .>> skipString ":=" .>> commentSpaces() .>>. rvalueDU() .>> skipString ";" .>> commentSpaces()  |>> PersistentLValue
     
 let ruleDU_TransientLValue() =
-    skipString "!" >>. identifierRecord() .>> skipString ":=" .>> commentSpaces() .>>. rvalueDU() .>> skipString ";" .>> commentSpaces() 
+    skipString "$" >>. spaces >>. skipString ":=" >>. commentSpaces() >>. parsingRValueDU() .>> skipString ";" .>> commentSpaces() 
         |>> TransientLValue
         
-let ruleDU_BindingLValue() =
-    skipString "&" >>. (singleIdentifierLevel() .>> spaces |>> fun i -> {levels=[i]}) .>>
-        skipString ":=" .>> commentSpaces() .>>. rvalueDU() .>> skipString ";" .>> commentSpaces()  |>> BindingLValue       
-    
 let ruleDU() =
-    ruleDU_PersistentLValue() <|> ruleDU_TransientLValue() <|> ruleDU_BindingLValue()
+    ruleDU_TransientLValue() <|> ruleDU_PersistentLValue() 
 
 type proxy = Proxy of identifier * int64
 
 let arrDecls() =
     let heapAST = skipString "^" >>. spaces >>. scalarDUT()
-               .>>. (skipString "[" .>> spaces .>> skipString "]" .>> spaces >>. singleIdentifierLevel() |>> fun i -> {levels=[i]})
+               .>>. (skipString "[" .>> spaces .>> skipString "]" .>> spaces >>. singleIdentifierLevel())
                 .>> spaces |>> fun (a,b) -> Heap(true, b, a)    
     let heapLocal = scalarDUT()
-               .>>. (skipString "[" .>> spaces .>> skipString "]" .>> spaces >>. singleIdentifierLevel() |>> fun i -> {levels=[i]})
+               .>>. (skipString "[" .>> spaces .>> skipString "]" .>> spaces >>. singleIdentifierLevel())
                 .>> spaces |>> fun (a,b) -> Heap(false, b, a)
     let arraySz = skipString "[" .>> spaces >>. pint64 .>> spaces .>> (skipString "]")                 
     let stackAST = skipString "^" >>. spaces >>. scalarDUT()
                 .>>. arraySz .>> spaces .>>. singleIdentifierLevel() .>> spaces 
-                     |>> fun ((t,v),i) -> Stack(false, {levels=[i]}, t, v)
+                     |>> fun ((t,v),i) -> Stack(false, i, t, v)
     let stackLocal = scalarDUT()
                 .>>. arraySz .>> spaces .>>. singleIdentifierLevel() .>> spaces 
-                     |>> fun ((t,v),i) -> Stack(false, {levels=[i]}, t, v)                      
+                     |>> fun ((t,v),i) -> Stack(false, i, t, v)                      
     (attempt (heapAST <|> heapLocal) <|> (stackAST <|> stackLocal)) .>> spaces .>> skipString ";"  .>> commentSpaces()                    
     
 let stmtParser,stmtRef = createParserForwardedToRef()
@@ -207,7 +210,7 @@ let markerDU_LiteralMarker() =
     literalRecord() |>> LiteralMarker
     
 let markerDU_ConstantMarker() =
-    identifierRecord() |>> fun i -> ConstantMarker(variable.Default i)
+    singleIdentifierLevel() |>> ConstantMarker
     
 let markerDU() =
     markerDU_LiteralMarker() <|> markerDU_ConstantMarker()
@@ -231,17 +234,28 @@ let stmtDU() =
 let elementDU_Syntax() =
     let decl =
         skipString "syntax" >>. spaces1 >>. singleIdentifierLevel() .>> commentSpaces() |>> fun i -> {levels=[i]}
-    let stmts = spaces >>. (many (stmtDU()))
+    let stmts = spaces >>. (many (spaces >>. stmtDU()))
     let arrs = spaces >>. opt (skipString "arrDecls" >>. commentSpaces() >>. betweenType "{" "}" (many (arrDecls())))
     let body = betweenType "{" "}" (arrs .>>. stmts)
     decl .>>. body |>> fun (id,(arrs,body)) ->
         match arrs with
             | Some(a) -> Syntax(id,a,Suite(body))
             | None -> Syntax(id,[],Suite(body))
+
+let templateBinding() =
+    
+    let arr = skipString "[]" |>> fun _ -> true
+    let sca = spaces |>> fun _ -> false
+    
+    let refVar = skipString "&" >>. (singleIdentifierLevel()) .>>. (arr <|> sca)
+                    |>> fun (l, b) -> if b then ArrayBinding(true,l) else ScalarBinding(true,l)
+    let nonRefVar = (singleIdentifierLevel()) .>>. (arr <|> sca)
+                    |>> fun (l, b) -> if b then ArrayBinding(false,l) else ScalarBinding(false,l)
+    refVar <|> nonRefVar                    
     
 let elementDU_Template() =
     let decl =
-        skipString "template" >>. spaces1 >>. (singleIdentifierLevel() .>> spaces |>> fun i -> {levels=[i]}) .>>. argLikeList "(" ")" "," (identifierRecord())
+        skipString "template" >>. spaces1 >>. (singleIdentifierLevel() .>> spaces |>> fun i -> {levels=[i]}) .>>. argLikeList "(" ")" "," (templateBinding())
     let stmts = spaces >>. (many (stmtDU()))
     let arrs = spaces >>. opt (skipString "arrDecls" >>. commentSpaces() >>. betweenType "{" "}" (many (arrDecls())))
     let body = betweenType "{" "}" (arrs .>>. stmts)
@@ -251,7 +265,7 @@ let elementDU_Template() =
             | None -> Template(id,bindings,[],Suite(body))
     
 let elementDU_Constant() =
-    skipString "constant" >>. spaces1 >>. (singleIdentifierLevel() |>> fun i -> {levels=[i]})
+    skipString "constant" >>. spaces1 >>. singleIdentifierLevel()
         .>>. (spaces >>. skipString ":=" >>. commentSpaces() >>. literalRecord() .>> commentSpaces() .>> skipString ";" .>> commentSpaces()) |>> Constant
     
 let elementDU() =
@@ -264,3 +278,6 @@ let parseIt code =
     eprintfn "starting"
     let parsed = code |> run (programDU() .>> eof)
     parsed |> eprintfn "%A"
+    match parsed with
+        | Success(a,b,c) -> a
+        | Failure _ -> failwith "Parse of input failed!"

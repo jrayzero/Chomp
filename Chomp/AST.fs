@@ -10,8 +10,6 @@ module Chomp.AST
 // bits are parsed from msb to lsb, which is the most common
 // we handle the bit packing for you
 
-// built-ins
-
 // TODO use unique pointers for holding the nested structures
 
 type scalarType =
@@ -72,18 +70,9 @@ and literal = { lit : literalType; value: string}
 and callback = { name: identifier; args: expr list }
 
 and variable =
-    { user: identifier; fqn: identifier }
+    { name: identifier; }
     static member Default user =
-        { user = user; fqn = user }
-
-// and variableKind =
-    // | SyntaxRef
-    // | TemplateRef
-    // | LocalRef
-    // | ASTRef
-    // | TemplateBinding
-    // | Constant
-    // | Undef // not know yet
+        { name = user; }
 
 // used for ParseAndVAlidate    
 type range =
@@ -100,18 +89,21 @@ type rule =
     // you need it for scalars since we don't pre-declare those
     | PersistentLValue of lvalue * rvalue // ^x/x/x[idx] := rvalue;
     // Lets you just skip over it. Require a name though to make it clearer what you're parsing
-    | TransientLValue of identifier * rvalue // !x := rvalue;
-    | BindingLValue of identifier * rvalue // &x := rvalue; only for use in templates--references the binding list
+    | TransientLValue of parsingRvalue // _ := parsingRvalue;
     
 and lvalue =
-    | ScalarL of isAST: bool * identifier // x or ^x
+    | ScalarL of isAST: bool * identifier // x or ^x (may also be a syntax element)
     | ArrL of identifier * expr // x[idx]
     
 // determines the type of the lvalue     
 and rvalue =
-    | ParseOnly of expr // [20] or [SyntaxGroup/template/constant] if lvalue is a storage, keep the value, otherwise just toss it
-    | ParseAndValidate of expr * rhs: range list // [20]{0..2,10} parse the value and then compare to the rhs possibilities
+    | ParsingRValue of parsingRvalue
     | Expr of expr // a + b, lets you just assign to some arbitrary expr
+    
+and parsingRvalue =
+    | ParseBits of expr // [20] if lvalue is a storage, keep the value, otherwise just toss it
+    | ParseBitsAndValidate of expr * rhs: range list // [20]{0..2,10} parse the value and then compare to the rhs possibilities
+    | ParseElement of identifier // <SyntaxGroup/template/constant> 
     
 type element =
     // syntax ident {
@@ -124,9 +116,13 @@ type element =
     //   ...rules...
     // }
     // cannot contain AST rules
-    | Template of identifier * bindings: identifier list * arrDecl list * body: stmt
+    | Template of identifier * bindings: binding list * arrDecl list * body: stmt
     // constant SOS := <literal>;
-    | Constant of identifier * literal
+    | Constant of string * literal
+    
+and binding =
+    | ArrayBinding of ref:bool * string
+    | ScalarBinding of ref:bool * string
     
 and stmt =
     | Rule of rule
@@ -146,11 +142,11 @@ and stmt =
 // backtracks    
 and marker =
     | LiteralMarker of literal
-    | ConstantMarker of variable // compiler checks that it is a constant!
+    | ConstantMarker of string // compiler checks that it is a constant!
     
 and arrDecl =
-    | Stack of isAST: bool * identifier * scalarType * int64
-    | Heap of isAST: bool * identifier * scalarType
+    | Stack of isAST: bool * string * scalarType * int64
+    | Heap of isAST: bool * string * scalarType
     
 type program = Program of element list    
     

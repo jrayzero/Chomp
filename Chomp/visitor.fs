@@ -1,6 +1,7 @@
 module Chomp.visitor
 
 open AST
+open Chomp.AST
 
 type ConstVisitor() =
     
@@ -13,8 +14,10 @@ type ConstVisitor() =
     abstract member visitVariable : variable -> unit
     abstract member visitRange : range -> unit
     abstract member visitRule : rule -> unit
+    abstract member visitParsingRvalue : parsingRvalue -> unit
     abstract member visitLvalue : lvalue -> unit
     abstract member visitRvalue : rvalue -> unit
+    abstract member visitBinding: binding -> unit
     abstract member visitElement : element -> unit
     abstract member visitStmt : stmt -> unit
     abstract member visitMarker : marker -> unit
@@ -69,8 +72,7 @@ type ConstVisitor() =
         x.args |> List.iter this.visitExpr
         
     default this.visitVariable x =
-        this.visitIdentifier x.user
-        this.visitIdentifier x.fqn
+        this.visitIdentifier x.name
         
     default this.visitRange x = ()
     
@@ -79,12 +81,8 @@ type ConstVisitor() =
             | PersistentLValue(l,r) ->
                 this.visitLvalue l
                 this.visitRvalue r
-            | TransientLValue(i,r) ->
-                this.visitIdentifier i
-                this.visitRvalue r
-            | BindingLValue(i,r) ->
-                this.visitIdentifier i
-                this.visitRvalue r
+            | TransientLValue(r) ->
+                this.visitParsingRvalue r
                 
     default this.visitLvalue x =
         match x with
@@ -95,12 +93,19 @@ type ConstVisitor() =
                 
     default this.visitRvalue x =
         match x with
-            | ParseOnly(expr) -> this.visitExpr expr
-            | ParseAndValidate(expr,r) ->
+            | ParsingRValue(parser) -> this.visitParsingRvalue parser                             
+            | Expr(expr) -> this.visitExpr expr
+            
+    default this.visitParsingRvalue x =
+        match x with
+            | ParseBits(expr) -> this.visitExpr expr
+            | ParseBitsAndValidate(expr,r) ->
                 this.visitExpr expr
                 r |> List.iter this.visitRange
-            | Expr(expr) -> this.visitExpr expr
-                
+            | ParseElement(elem) -> this.visitIdentifier elem           
+
+    default this.visitBinding x = ()
+                    
     default this.visitElement x =
         match x with
             | Syntax(i, arr, body) ->
@@ -109,11 +114,10 @@ type ConstVisitor() =
                 this.visitStmt body
             | Template(i, bindings, arr, body) ->
                 this.visitIdentifier i
-                bindings |> List.iter this.visitIdentifier
+                bindings |> List.iter this.visitBinding
                 arr |> List.iter this.visitArrDecl
                 this.visitStmt body
-            | Constant(i,lit) ->
-                this.visitIdentifier i
+            | Constant(_,lit) ->
                 this.visitLiteral lit
                 
     default this.visitStmt x =
@@ -142,15 +146,13 @@ type ConstVisitor() =
     default this.visitMarker x =
         match x with
             | LiteralMarker(lit) -> this.visitLiteral lit
-            | ConstantMarker(con) -> this.visitVariable con
+            | _ -> ()
             
     default this.visitArrDecl x =
         match x with
-            | Stack(_, i, st, _) ->
-                this.visitIdentifier i
+            | Stack(_, _, st, _) ->
                 this.visitScalarType st
-            | Heap(_, i, st) ->
-                this.visitIdentifier i
+            | Heap(_, _, st) ->
                 this.visitScalarType st
                 
     default this.visitProgram x =
@@ -168,8 +170,10 @@ type Rebuilder() =
     abstract member visitVariable : variable -> variable
     abstract member visitRange : range -> range
     abstract member visitRule : rule -> rule
+    abstract member visitParsingRvalue : parsingRvalue -> parsingRvalue
     abstract member visitLvalue : lvalue -> lvalue
     abstract member visitRvalue : rvalue -> rvalue
+    abstract member visitBinding : binding -> binding
     abstract member visitElement : element -> element
     abstract member visitStmt : stmt -> stmt
     abstract member visitMarker : marker -> marker
@@ -246,7 +250,7 @@ type Rebuilder() =
         {name=this.visitIdentifier x.name; args=x.args |> List.map this.visitExpr}
         
     default this.visitVariable x =
-        {user=this.visitIdentifier x.user; fqn=this.visitIdentifier x.fqn}
+        {name=this.visitIdentifier x.name }
         
     default this.visitRange x =
         match x with
@@ -262,15 +266,9 @@ type Rebuilder() =
                     this.visitLvalue l,
                     this.visitRvalue r
                     )
-            | TransientLValue(i,r) ->
+            | TransientLValue(r) ->
                 TransientLValue(
-                    this.visitIdentifier i,
-                    this.visitRvalue r
-                    )
-            | BindingLValue(i,r) ->
-                BindingLValue(
-                    this.visitIdentifier i,
-                    this.visitRvalue r
+                    this.visitParsingRvalue r
                     )
                 
     default this.visitLvalue x =
@@ -284,13 +282,23 @@ type Rebuilder() =
                 
     default this.visitRvalue x =
         match x with
-            | ParseOnly(expr) -> ParseOnly(this.visitExpr expr)
-            | ParseAndValidate(expr,r) ->
-                ParseAndValidate(
+            | ParsingRValue(parse) -> ParsingRValue(this.visitParsingRvalue parse)              
+            | Expr(expr) -> Expr(this.visitExpr expr)
+
+    default this.visitParsingRvalue x =
+        match x with            
+            | ParseBits(expr) -> ParseBits(this.visitExpr expr)
+            | ParseBitsAndValidate(expr,r) ->
+                ParseBitsAndValidate(
                     this.visitExpr expr,
                     r |> List.map this.visitRange
                     )
-            | Expr(expr) -> Expr(this.visitExpr expr)
+            | ParseElement(elem) -> ParseElement(this.visitIdentifier elem)              
+            
+    default this.visitBinding x =
+        match x with
+            | ScalarBinding(e,b) -> ScalarBinding(e, b)
+            | ArrayBinding(e,b) -> ArrayBinding(e, b)
                 
     default this.visitElement x =
         match x with
@@ -303,13 +311,13 @@ type Rebuilder() =
             | Template(i, bindings, arr, body) ->
                 Template(
                     this.visitIdentifier i,
-                    bindings |> List.map this.visitIdentifier,
+                    bindings |> List.map this.visitBinding,
                     arr |> List.map this.visitArrDecl,
                     this.visitStmt body
                     )
-            | Constant(i,lit) ->
+            | Constant(name,lit) ->
                 Constant(
-                    this.visitIdentifier i,
+                    name,
                     this.visitLiteral lit
                     )
                 
@@ -345,21 +353,21 @@ type Rebuilder() =
     default this.visitMarker x =
         match x with
             | LiteralMarker(lit) -> LiteralMarker(this.visitLiteral lit)
-            | ConstantMarker(con) -> ConstantMarker(this.visitVariable con)
+            | ConstantMarker(con) -> ConstantMarker(con)
             
     default this.visitArrDecl x =
         match x with
             | Stack(a, i, st, sz) ->
                 Stack(
                     a,
-                    this.visitIdentifier i,
+                    i,
                     this.visitScalarType st,
                     sz
                     )
             | Heap(a, i, st) ->
                 Heap(a,
-                    this.visitIdentifier i,
-                    this.visitScalarType st
+                     i,
+                     this.visitScalarType st
                     )
                 
     default this.visitProgram x =

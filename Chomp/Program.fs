@@ -1,6 +1,7 @@
 ﻿module CommandLine
 
 open Chomp.parser
+open Chomp.passes
 
 let testKeyword = "test"
 
@@ -9,7 +10,7 @@ let enterParse (code: string list) =
         eprintfn "Expected code to parse!"
         1
     else
-        parseIt (code |> String.concat "\n")
+        parseIt (code |> String.concat "\n") |> runPasses
         0    
 
 [<EntryPoint>]
