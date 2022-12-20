@@ -82,11 +82,11 @@ type scalarDeclaration = { name: string; t: scalarType } // x::<type>;
 
 type arrayDeclaration =
     | Stack of string * scalarType * int64 // x::<type>[<sz>];
-    | Heap of string * scalarType // x::<type>[];
+    | Heap of string * scalarType * expr// @x::<type>[<sz>];
     
 type anyDeclaration =
     | ScalarDeclaration of scalarDeclaration // x::<type>;
-    | ArrayDeclaration of arrayDeclaration // x::<type>[]; or x::<type>[<sz>];
+    | ArrayDeclaration of arrayDeclaration //  x::<type>[<sz>];
 
 type lhs =
     | ScalarLhs of identifier // a.b.c 
@@ -95,11 +95,13 @@ type lhs =
 type rhs =
     | ParseBits of expr // [20] if lvalue is a storage, keep the value, otherwise just toss it
     | ParseBitsAndValidate of expr * rhs: range list // [20]{0..2,10} parse the value and then compare to the rhs possibilities
-    | ParseElement of string // <SyntaxGroup/template/constant> (can't actually have template when you are assignment, but can have it for transient)
+    | ParseElement of string // <SyntaxGroup/constant> (can't actually have template when you are assignment, but can have it for transient)
+    | ParseTemplate of string * expr list
     | Expr of expr // a + b, lets you just assign to some arbitrary expr. doesn't parse anything
 
 type rule =
-    | RuleScalarDeclaration of scalarDeclaration // x::int8; x::syntaxType;
+    | ScalarDeclarationAssign of scalarDeclaration * option<rhs> // x::int8; x::syntaxType;
+    | ArrayDeclarationOnly of arrayDeclaration
     | Assignment of lhs * rhs // x[idx] := rvalue; or x := rvalue;
     | Transient of rhs // rvalue;
     
@@ -114,18 +116,13 @@ type element =
     //     val::someSyntaxElem;
     //     val2::float;
     //   }
-    //   local {
-    //     arrA::int32[]; // heap
-    //     arrB::int32[10]; // stack
-    //   } 
     //   ...stmts...
     // }
-    | Syntax of string * ast: anyDeclaration list * local: arrayDeclaration list * body: stmt
+    | Syntax of string * ast: anyDeclaration list *  body: stmt
     // template ident(bindings...) {
-    //   local { ... }
     //   ...stmts...
     // }
-    | Template of string * bindings: binding list * local: arrayDeclaration list * body: stmt
+    | Template of string * bindings: binding list * body: stmt
     // constant SOS := <literal>;
     | Constant of string * literal
 

@@ -80,7 +80,9 @@ type ConstVisitor() =
     default this.visitArrayDeclaration x =
         match x with
             | Stack(_,t,_) -> this.visitScalarType t
-            | Heap(_,t) -> this.visitScalarType t
+            | Heap(_,t,ex) ->
+                this.visitScalarType t
+                this.visitExpr ex
             
     default this.visitAnyDeclaration x =
         match x with
@@ -100,12 +102,18 @@ type ConstVisitor() =
             | ParseBitsAndValidate(expr,r) ->
                 this.visitExpr expr
                 r |> List.iter this.visitRange
+            | ParseTemplate(_,e) -> e |> List.iter this.visitExpr              
             | Expr(expr) -> this.visitExpr expr
             | _ -> ()
     
     default this.visitRule x =
         match x with
-            | RuleScalarDeclaration(d) -> this.visitScalarDeclaration d
+            | ScalarDeclarationAssign(d,r) ->
+                this.visitScalarDeclaration d
+                match r with
+                    | Some(s) -> this.visitRhs s
+                    | None -> ()
+            | ArrayDeclarationOnly(a) -> this.visitArrayDeclaration a        
             | Assignment(l,r) ->
                 this.visitLhs l
                 this.visitRhs r
@@ -118,13 +126,11 @@ type ConstVisitor() =
                     
     default this.visitElement x =
         match x with
-            | Syntax(_, ast, local, body) ->
+            | Syntax(_, ast, body) ->
                 ast |> List.iter this.visitAnyDeclaration
-                local |> List.iter this.visitArrayDeclaration 
                 this.visitStmt body
-            | Template(_, bindings, local, body) ->
+            | Template(_, bindings, body) ->
                 bindings |> List.iter this.visitBinding
-                local |> List.iter this.visitArrayDeclaration 
                 this.visitStmt body
             | Constant(_,lit) ->
                 this.visitLiteral lit
@@ -251,8 +257,8 @@ type Rebuilder() =
         match x with
             | Stack(name,t,sz) ->
                 Stack(name, this.visitScalarType t, sz)
-            | Heap(name,t) ->
-                Heap(name, this.visitScalarType t)
+            | Heap(name,t,ex) ->
+                Heap(name, this.visitScalarType t, this.visitExpr ex)
             
     default this.visitAnyDeclaration x =
         match x with
@@ -277,11 +283,17 @@ type Rebuilder() =
                     r |> List.map this.visitRange
                 )
             | ParseElement(s) -> ParseElement(s)
+            | ParseTemplate(s,e) -> ParseTemplate(s, e |> List.map this.visitExpr)
             | Expr(expr) -> Expr(this.visitExpr expr)
     
     default this.visitRule x =
         match x with
-            | RuleScalarDeclaration(d) -> RuleScalarDeclaration(this.visitScalarDeclaration d)
+            | ScalarDeclarationAssign(d,r) ->
+                match r with
+                    | Some(s) ->
+                        ScalarDeclarationAssign(this.visitScalarDeclaration d, Some(this.visitRhs s))
+                    | None -> ScalarDeclarationAssign(this.visitScalarDeclaration d, None)
+            | ArrayDeclarationOnly(arr) -> ArrayDeclarationOnly(this.visitArrayDeclaration arr)                    
             | Assignment(l,r) ->
                 Assignment(
                     this.visitLhs l,
@@ -296,18 +308,16 @@ type Rebuilder() =
                     
     default this.visitElement x =
         match x with
-            | Syntax(name, ast, local, body) ->
+            | Syntax(name, ast, body) ->
                 Syntax(
                     name,
                     ast |> List.map this.visitAnyDeclaration,
-                    local |> List.map this.visitArrayDeclaration, 
                     this.visitStmt body
                     )
-            | Template(name, bindings, local, body) ->
+            | Template(name, bindings, body) ->
                 Template(
                     name,
                     bindings |> List.map this.visitBinding,
-                    local |> List.map this.visitArrayDeclaration, 
                     this.visitStmt body
                     )
             | Constant(name,lit) ->

@@ -141,16 +141,18 @@ let scalarDeclarationRecord() =
     singleIdentifierLevel() .>> spaces .>> skipString "::" .>> spaces .>>. scalarTypeDU() .>> commentSpaces()
         .>> skipString ";" .>> commentSpaces() |>> fun (x,y) -> {name=x; t=y} 
 
-let arrayHeapDeclarationExpr() =
-    singleIdentifierLevel() .>> spaces .>> skipString "::" .>> spaces .>>. scalarTypeDU() .>> spaces .>> skipString "[]" .>> spaces
+let arrayEmptyDeclarationExpr() =
+    singleIdentifierLevel() .>> spaces .>> skipString "::" .>> spaces .>>. scalarTypeDU() 
+        .>> skipString "[]" .>> spaces
 
 let arrayDeclarationDU() =
-    let heap = singleIdentifierLevel() .>> spaces .>> skipString "::" .>>. scalarTypeDU() .>> spaces
-               .>> skipString "[]" .>> commentSpaces() .>> skipString ";" .>> commentSpaces() |>> Heap
+    let heap = skipString "@" >>. singleIdentifierLevel() .>> spaces .>> skipString "::" .>>. scalarTypeDU() .>> spaces
+               .>> skipString "[" .>>. exprDU() .>> skipString "]" .>> commentSpaces() .>> skipString ";"
+                .>> commentSpaces() |>> fun ((a,b),c) -> Heap(a,b,c)
     let stack = singleIdentifierLevel() .>> spaces .>> skipString "::" .>>. scalarTypeDU() .>> spaces
                .>> skipString "[" .>>. pint64 .>> skipString "]" .>> commentSpaces() .>> skipString ";"
                 .>> commentSpaces() |>> fun ((a,b),c) -> Stack(a,b,c)
-    attempt heap <|> stack                
+    heap <|> stack                
 
 let anyDeclarationDU() =
     (attempt (arrayDeclarationDU() |>> ArrayDeclaration))
@@ -163,62 +165,41 @@ let lhsDU() =
                 | Some(e) -> ArrayLhs(x,e)
                 | None -> ScalarLhs(x)
     
-// let lvalueDU_ArrL () =
-//     // skipString "^" >>. identifierRecord() .>>. (betweenType "[" "]" opp.ExpressionParser) |>> fun (n,l) -> ArrL(true, n, l)
-//     identifierRecord() .>>. (betweenType "[" "]" opp.ExpressionParser) |>> ArrayLhs
-//     
-// let lvalueDU() =
-//     attempt (notEmpty (lvalueDU_ArrL())) <|> lvalueDU_ScalarL()
-    
 let rhsDU_ParseBits() = betweenType "[" "]" (exprDU()) |>> ParseBits
+
 let rhsDU_ParseBitsAndValidate() =
-    (betweenType "[" "]" (exprDU())) .>>. (argLikeList1 "{" "}" "," (rangeDU())) |>> ParseBitsAndValidate  
+    (betweenType "[" "]" (exprDU())) .>>. (argLikeList1 "{" "}" "," (rangeDU())) |>> ParseBitsAndValidate
+
 let rhsDU_ParseElement() =
     (betweenType "<" ">" (singleIdentifierLevel() |>> ParseElement))
+    
+let rhsDU_ParseTemplate() =
+    (betweenType "<" ">" (singleIdentifierLevel() .>>. (argLikeList "(" ")" "," (exprDU())) |>> ParseTemplate))    
+    
 let rhsDU() =
     attempt (rhsDU_ParseBitsAndValidate())
     <|> rhsDU_ParseBits()
+    <|> attempt (rhsDU_ParseTemplate())
     <|> rhsDU_ParseElement()
     <|> (exprDU() |>> Expr)
-    
-// let rvalueDU_Expr() = exprDU() |>> Expr
 
-// let rvalueDU() =
-    // ((parsingRValueDU() |>> ParsingRValue) <|> rvalueDU_Expr()) .>> commentSpaces()
-
-// let ruleDU_PersistentLValue() =
-    // lvalueDU() .>> skipString ":=" .>> commentSpaces() .>>. rvalueDU() .>> skipString ";" .>> commentSpaces()  |>> PersistentLValue
-    
-// let ruleDU_TransientLValue() =
-    // skipString "$" >>. spaces >>. skipString ":=" >>. commentSpaces() >>. parsingRValueDU() .>> skipString ";" .>> commentSpaces() 
-        // |>> TransientLValue
-
-let ruleDU_ScalarDeclaration() = scalarDeclarationRecord() |>> rule.RuleScalarDeclaration
+let ruleDU_ScalarDeclarationAssign() =
+    scalarDeclarationExpr() .>> spaces .>>. opt (skipString ":=" .>> commentSpaces() >>. rhsDU() .>> commentSpaces())
+        .>> skipString ";" .>> commentSpaces() |>> fun ((x,y),o) -> ScalarDeclarationAssign({name=x;t=y},o)
+        
+let ruleDU_ArrayDeclarationOnly() =
+    arrayDeclarationDU() |>> ArrayDeclarationOnly
+        
 let ruleDU_Assignment() = lhsDU() .>> spaces .>> skipString ":=" .>> commentSpaces() .>>. rhsDU() .>> commentSpaces()
                           .>> skipString ";" .>> commentSpaces() |>> Assignment
 let ruleDU_Transient() = rhsDU() .>> commentSpaces() .>> skipString ";" .>> commentSpaces() |>> Transient                          
         
 let ruleDU() =
-    attempt (notEmpty (ruleDU_ScalarDeclaration()))
+    attempt (notEmpty (ruleDU_ScalarDeclarationAssign()))
+    <|> (attempt (notEmpty (ruleDU_ArrayDeclarationOnly())))
     <|> (attempt (notEmpty (ruleDU_Assignment())))
     <|> ruleDU_Transient()
 
-// let arrDecls() =
-//     let heapAST = skipString "^" >>. spaces >>. scalarDUT()
-//                .>>. (skipString "[" .>> spaces .>> skipString "]" .>> spaces >>. singleIdentifierLevel())
-//                 .>> spaces |>> fun (a,b) -> Heap(true, b, a)    
-//     let heapLocal = scalarDUT()
-//                .>>. (skipString "[" .>> spaces .>> skipString "]" .>> spaces >>. singleIdentifierLevel())
-//                 .>> spaces |>> fun (a,b) -> Heap(false, b, a)
-//     let arraySz = skipString "[" .>> spaces >>. pint64 .>> spaces .>> (skipString "]")                 
-//     let stackAST = skipString "^" >>. spaces >>. scalarDUT()
-//                 .>>. arraySz .>> spaces .>>. singleIdentifierLevel() .>> spaces 
-//                      |>> fun ((t,v),i) -> Stack(false, i, t, v)
-//     let stackLocal = scalarDUT()
-//                 .>>. arraySz .>> spaces .>>. singleIdentifierLevel() .>> spaces 
-//                      |>> fun ((t,v),i) -> Stack(false, i, t, v)                      
-//     (attempt (heapAST <|> heapLocal) <|> (stackAST <|> stackLocal)) .>> spaces .>> skipString ";"  .>> commentSpaces()                    
-    
 let stmtParser,stmtRef = createParserForwardedToRef()
 
 let stmtDU_Rule() = ruleDU() |>> Rule
@@ -268,26 +249,18 @@ let elementDU_Syntax() =
     let decl =
         skipString "syntax" >>. spaces1 >>. singleIdentifierLevel() .>> commentSpaces() 
     let ast = spaces >>. opt (skipString "ast" >>. commentSpaces() >>. betweenType "{" "}" (many (anyDeclarationDU())))
-    let local = spaces >>. opt (skipString "local" >>. commentSpaces()
-                                >>. betweenType "{" "}" (many (arrayDeclarationDU())))
     let stmts = commentSpaces() >>. (many (commentSpaces() >>. stmtDU()))        
-    let body = betweenType "{" "}" (ast .>>. local .>>. stmts)
-    decl .>>. body |>> fun (name,((ast,local),body)) ->
+    let body = betweenType "{" "}" (ast .>>. stmts)
+    decl .>>. body |>> fun (name,(ast,body)) ->
         match ast with
-            | Some(a) ->
-                match local with
-                    | Some(l) -> Syntax(name, a, l, Suite(body))
-                    | None -> Syntax(name, a, [], Suite(body))
-            | None ->
-                match local with
-                    | Some(l) -> Syntax(name, [], l, Suite(body))
-                    | None -> Syntax(name, [], [], Suite(body))
+            | Some(a) -> Syntax(name, a, Suite(body))
+            | None -> Syntax(name, [], Suite(body))
 
 let templateBinding() =
-    let array = arrayHeapDeclarationExpr() |>> fun (x,y) -> (true,x,y)
+    let array = arrayEmptyDeclarationExpr() |>> fun (x,y) -> (true,x,y)
     let scalar = scalarDeclarationExpr() |>> fun (x,y) -> (false,x,y)
     
-    let refVar = skipString "&" >>. ((attempt array) <|> scalar) |>> fun (a,b,c) ->
+    let refVar = skipString "&" >>. (attempt array <|> scalar) |>> fun (a,b,c) ->
                     if a then ArrayBinding(true,c,b) else ScalarBinding(true,c,b)
     let nonRefVar = ((attempt array) <|> scalar) |>> fun (a,b,c) ->
                     if a then ArrayBinding(false,c,b) else ScalarBinding(false,c,b)                    
@@ -297,14 +270,9 @@ let elementDU_Template() =
     let decl =
         skipString "template" >>. spaces1 >>. singleIdentifierLevel() .>> spaces
         .>>. argLikeList "(" ")" "," (templateBinding()) .>> commentSpaces() 
-    let local = spaces >>. opt (skipString "local" >>. commentSpaces()
-                                >>. betweenType "{" "}" (many (arrayDeclarationDU())))
     let stmts = commentSpaces() >>. (many (commentSpaces() >>. stmtDU()))            
-    let body = betweenType "{" "}" (local .>>. stmts)
-    decl .>>. body |>> fun ((name,bindings),(local,body)) ->
-        match local with
-            | Some(l) -> Template(name, bindings, l, Suite(body))
-            | None -> Template(name, bindings, [], Suite(body))
+    let body = betweenType "{" "}" stmts
+    decl .>>. body |>> fun ((name,bindings),body) -> Template(name, bindings, Suite(body))
     
 let elementDU_Constant() =
     skipString "constant" >>. spaces1 >>. singleIdentifierLevel()
