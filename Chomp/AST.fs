@@ -19,6 +19,7 @@ type scalarType =
     | Int64 of signed:bool
     | Float32
     | Float64
+    | SyntaxRef of string // a reference to a syntax class
 
 type identifier = { levels: string list }
 
@@ -27,6 +28,10 @@ type literalType =
     | Decimal
     | Binary
     | Ascii
+    
+type variable = { name: identifier; }
+
+type literal = { lit : literalType; value: string}   
     
 // the numbers represent the precedence (copies from C)
 // we only have left-associativity, so we don't need to worry really
@@ -65,65 +70,65 @@ type expr =
     | Variable of variable
     | Literal of literal
     
-and literal = { lit : literalType; value: string}    
-    
-and callback = { name: identifier; args: expr list }
+and callback = { name: string; args: expr list }
 
-and variable =
-    { name: identifier; }
-    static member Default user =
-        { name = user; }
-
-// used for ParseAndVAlidate    
 type range =
     | Single of int64 // value
     | Lower of int64 // lower..
     | Upper of int64 // ..upper
     | Range of lower: int64 * upper: int64 // lower..upper
+    
+type scalarDeclaration = { name: string; t: scalarType } // x::<type>;
 
-// TODO I want ^ to be @, but that seems to cause issues with just reading in the actual dotnet command line (@ might be special?)
-// these are decls, but are assignments
-type rule =
-    // transients don't have general lvalue since it doesn't make sense for an array to be transient
-    // the array doesn't need persistent b/c that is handled in the arrdecls range
-    // you need it for scalars since we don't pre-declare those
-    | PersistentLValue of lvalue * rvalue // ^x/x/x[idx] := rvalue;
-    // Lets you just skip over it. Require a name though to make it clearer what you're parsing
-    | TransientLValue of parsingRvalue // _ := parsingRvalue;
+type arrayDeclaration =
+    | Stack of string * scalarType * int64 // x::<type>[<sz>];
+    | Heap of string * scalarType // x::<type>[];
     
-and lvalue =
-    | ScalarL of isAST: bool * identifier // x or ^x (may also be a syntax element)
-    | ArrL of identifier * expr // x[idx]
+type anyDeclaration =
+    | ScalarDeclaration of scalarDeclaration // x::<type>;
+    | ArrayDeclaration of arrayDeclaration // x::<type>[]; or x::<type>[<sz>];
+
+type lhs =
+    | ScalarLhs of identifier // a.b.c 
+    | ArrayLhs of identifier * expr // a.b.c[idx]
     
-// determines the type of the lvalue     
-and rvalue =
-    | ParsingRValue of parsingRvalue
-    | Expr of expr // a + b, lets you just assign to some arbitrary expr
-    
-and parsingRvalue =
+type rhs =
     | ParseBits of expr // [20] if lvalue is a storage, keep the value, otherwise just toss it
     | ParseBitsAndValidate of expr * rhs: range list // [20]{0..2,10} parse the value and then compare to the rhs possibilities
-    | ParseElement of identifier // <SyntaxGroup/template/constant> 
+    | ParseElement of string // <SyntaxGroup/template/constant> (can't actually have template when you are assignment, but can have it for transient)
+    | Expr of expr // a + b, lets you just assign to some arbitrary expr. doesn't parse anything
+
+type rule =
+    | RuleScalarDeclaration of scalarDeclaration // x::int8; x::syntaxType;
+    | Assignment of lhs * rhs // x[idx] := rvalue; or x := rvalue;
+    | Transient of rhs // rvalue;
+    
+type binding =
+    | ArrayBinding of ref:bool * scalarType * string // arr::int8[] or &arr::int8[] (no diff btw heap/stack)
+    | ScalarBinding of ref:bool * scalarType * string // val::int8 or &val::int8
     
 type element =
     // syntax ident {
-    //   arrDecls { }
-    //   ...rules...
+    //   ast {
+    //     arrAst::int8[];
+    //     val::someSyntaxElem;
+    //     val2::float;
+    //   }
+    //   local {
+    //     arrA::int32[]; // heap
+    //     arrB::int32[10]; // stack
+    //   } 
+    //   ...stmts...
     // }
-    | Syntax of string * arrDecl list * body: stmt
+    | Syntax of string * ast: anyDeclaration list * local: arrayDeclaration list * body: stmt
     // template ident(bindings...) {
-    //   arrDecls { ... }
-    //   ...rules...
+    //   local { ... }
+    //   ...stmts...
     // }
-    // cannot contain AST rules
-    | Template of string * bindings: binding list * arrDecl list * body: stmt
+    | Template of string * bindings: binding list * local: arrayDeclaration list * body: stmt
     // constant SOS := <literal>;
     | Constant of string * literal
-    
-and binding =
-    | ArrayBinding of ref:bool * string
-    | ScalarBinding of ref:bool * string
-    
+
 and stmt =
     | Rule of rule
     // for i in lower to upper { body }
@@ -143,10 +148,6 @@ and stmt =
 and marker =
     | LiteralMarker of literal
     | ConstantMarker of string // compiler checks that it is a constant!
-    
-and arrDecl =
-    | Stack of isAST: bool * string * scalarType * int64
-    | Heap of isAST: bool * string * scalarType
     
 type program = Program of element list    
     
