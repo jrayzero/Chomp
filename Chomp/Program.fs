@@ -11,7 +11,7 @@ let enterParse (code: string list) =
         eprintfn "Expected code to parse!"
         1
     else
-        parseIt (code |> String.concat "\n") |> fun (x,_) -> runPasses x
+        parseIt (code |> String.concat "\n") |> fun (x,_) -> runPasses x |> ignore
         0
         
 let checkAST (code: string list) =

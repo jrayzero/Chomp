@@ -149,7 +149,7 @@ and stmt =
 // backtracks    
 and marker =
     | LiteralMarker of literal
-    | ConstantMarker of string // compiler checks that it is a constant!
+    | ConstantMarker of string
     
 type program = Program of element list    
     

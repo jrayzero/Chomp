@@ -4,13 +4,6 @@ open System.Collections.Generic
 open System.Globalization
 open AST
 
-// built-in functions (maye be converted at actual codegen)
-// skipBits(expr)
-// currentBitMSB(expr)
-// parse(syntaxObj)
-// syntaxFactory(syntaxName)
-// templateFactory(syntaxName, args...)
-
 // [x]; => skipBits(x)
 type LowerTransientParseBits() =
     inherit visitor.Rebuilder()
@@ -26,8 +19,7 @@ type LowerTransientParseBits() =
                     | Transient(t) ->
                         match t with
                             | ParseBits(e) ->
-                                ExprStmt(Callback({name="skipBits"
-                                                   args = [this.visitExpr e]}))
+                                ExprStmt(builtins.skipBits (this.visitExpr e))
                             | _ -> base.visitStmt x
                     | _ -> base.visitStmt x
             | _ -> base.visitStmt x
@@ -142,23 +134,11 @@ type LowerParseLiteral() =
                         | Binary ->
                             if nbits > 64 then
                                 failwith (sprintf "Parsed binary value 0b%s does not fit in 64-bit integer" lit.value)
-                            let mutable binary: int64 = 0
-                            let mutable idx = 0
-                            for c in lit.value do
-                                if c = '1' then
-                                    let v = int64(1) <<< idx
-                                    binary <- binary + v
-                                idx <- idx + 1
-                            binary
+                            common.binaryStringToDec lit.value
                         | Ascii ->
                             if nbits > 64 then
-                                failwith (sprintf "Parsed ascii value \"%s\" does not fit in 64-bit integer" lit.value)                            
-                            let mutable ascii: int64 = 0
-                            for c in lit.value do
-                                let cx = int64(c)
-                                ascii <- (ascii ||| cx)
-                                ascii <- ascii <<< 8
-                            ascii
+                                failwith (sprintf "Parsed ascii value \"%s\" does not fit in 64-bit integer" lit.value)
+                            common.asciiStringToDec lit.value
                 let newLit = Literal({lit=AST.Decimal; value=sprintf "%d" nbits})                            
                 ParseBitsAndValidate(newLit, [Single(dec)])
             | _ -> base.visitRhs x
@@ -192,8 +172,18 @@ type LowerParseElementAndParseTemplate() =
 // lhsTmp := parseBits(buffer, cursor, 5);
 // if !(lhs within ranges...) { fatal("Invalid value"); }
 // lhs := lhsTmp
+//
+// also lower ParseBitsAndValidates that don't have a lhs
+// [5]{ranges...} =>
+// if !exists(buffer, cursor, 5) { fatal("Not enough bits"); }
+// tmp := parseBits(buffer, cursor, 5);
+// if !(tmp within ranges...) { fatal("Invalid value"); }
 type LowerParseAssignments() =
     inherit visitor.Rebuilder()
+    
+    static member pass x =
+        printfn "==Running pass LowerParseAssignments"
+        LowerParseAssignments().visitProgram x    
     
     member private this.visitRhsInner r =
         let failNbits = builtins.fatal "Not enough bits left"
@@ -241,10 +231,6 @@ type LowerParseAssignments() =
                                          None)
                 Some((Suite([enough;parsed;checkRanges]),Expr(Variable(tmpVar))))
             | _ -> None
-    
-    static member pass x =
-        printfn "==Running pass LowerParseAssignments"
-        LowerParseAssignments().visitProgram x
         
     override this.visitStmt x =
         match x with
@@ -268,7 +254,69 @@ type LowerParseAssignments() =
                                 Suite([a
                                        Rule(Assignment(this.visitLhs l, b))])
                             | None ->
-                                Rule(Assignment(this.visitLhs l, this.visitRhs r))  
+                                Rule(Assignment(this.visitLhs l, this.visitRhs r))
+                    | Transient(r) ->
+                        let res = this.visitRhsInner r
+                        match res with
+                            | Some(a,_) ->
+                                Suite([a])
+                            | None ->
+                                Rule(Transient(this.visitRhs r))
                     | _ -> base.visitStmt x
             | _ -> base.visitStmt x    
+
+// just to get something going
+// should be all literal markers at this point
+// alternate {
+//   marker <lit> { A; }
+//   marker <lit2> { B; }
+// }
+// =>
+// if lookaheadBits(nbits) = lit {
+//    A;
+//    skipBits(nbits)
+// } else {
+//    if lookaheadBits(nbits2) = lit2 { B; skipBits(nbit2); }
+//    else { fatal "Alternate failed"; }  
+// }
+type NaiveLowerAlternates() =
+    inherit visitor.Rebuilder()
+    
+    static member pass x =
+        printfn "==Running pass NaiveLowerAlternates"
+        NaiveLowerAlternates().visitProgram x
+        
+    override this.visitStmt x =
+        match x with
+            | Alternate(options) ->
+                let tmp = common.uniqueVar (Some("alt"))
+                let decl = ScalarDeclarationAssign({name=tmp.name.levels[0];t=Int64(true)}, None)
+                // build all the lookaheads, literals to match on, bits per literal, and bodies for each option
+                let items = options |> List.map (fun (m,body) ->
+                    let value,nbits = 
+                        match m with
+                            | LiteralMarker(lit) ->
+                                match lit.lit with
+                                    | Hex -> System.Int64.Parse(lit.value, NumberStyles.HexNumber),lit.value.Length * 4
+                                    | Decimal -> System.Int64.Parse(lit.value), 64
+                                    | Binary -> common.binaryStringToDec lit.value, lit.value.Length
+                                    | Ascii -> common.asciiStringToDec lit.value, lit.value.Length * 8
+                            | _ -> failwith "Constant markers should be lowered to literal!"
+                    let lookahead = builtins.lookaheadBits (Literal({lit=Decimal; value=sprintf "%d" nbits}))
+                    (lookahead, value, Literal({lit=Decimal;value=sprintf "%d" nbits}), body)
+                    )
+                let mutable ifElse = Suite([])
+                for i in items.Length-1..-1..0 do
+                    let lk,lit,nbits,body = items[i]
+                    if i = items.Length - 1 then
+                        // innermost
+                        ifElse <- IfElse(Equals(true, [lk;Literal({lit=Decimal;value=sprintf "%d" lit})]),
+                                        Suite([ExprStmt(builtins.skipBits nbits);body]),
+                                        Some(ExprStmt(builtins.fatal "Alternate failed")))
+                    else
+                        ifElse <- IfElse(Equals(true, [lk;Literal({lit=Decimal;value=sprintf "%d" lit})]),
+                                        Suite([ExprStmt(builtins.skipBits nbits);body]), Some(ifElse))                        
+                    
+                ifElse
+            | _ -> base.visitStmt x
     

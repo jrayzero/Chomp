@@ -23,4 +23,11 @@ let exists nbits = Callback({name="exists"; args=[Variable(bufferVar);Variable(c
 let fatal msg = Callback({name="fatal"; args=[Literal({lit=Ascii; value=msg})]})
 
 // placeholder for a parsing routine on the buffer
-let parseBits nbits = Callback({name="parseBits"; args=[Variable(bufferVar);Variable(cursorVar);nbits]})
+let parseBitsName = "parseBits"
+let parseBits nbits = Callback({name=parseBitsName; args=[Variable(bufferVar);Variable(cursorVar);nbits]})
+
+// placeholder for a lookahead routine on the buffer
+let lookaheadBitsName = "lookaheadBits"
+let lookaheadBits nbits = Callback({name=lookaheadBitsName; args=[Variable(bufferVar);Variable(cursorVar);nbits]})
+
+let skipBits nbits = Callback({name="skipBits"; args = [nbits]})

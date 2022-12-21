@@ -13,6 +13,24 @@ let uniqueVar prefix =
     let name = sprintf "%s%d" prefix nextId
     nextId <- nextId + 1
     {name={levels=[name]}}
+    
+let binaryStringToDec (s:string) =
+    let mutable binary: int64 = 0
+    let mutable idx = 0
+    for c in s do
+        if c = '1' then
+            let v = int64(1) <<< idx
+            binary <- binary + v
+        idx <- idx + 1
+    binary
+    
+let asciiStringToDec (s:string) =
+    let mutable ascii: int64 = 0
+    for c in s do
+        let cx = int64(c)
+        ascii <- (ascii ||| cx)
+        ascii <- ascii <<< 8
+    ascii    
 
 type GatherConstants() =
     inherit ConstVisitor()
