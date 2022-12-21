@@ -44,7 +44,7 @@ type InlineConstants(constantDecls: Dictionary<string,literal>) =
     
     static member pass x =
         printfn "==Running pass InlineConstants"
-        let this = InlineConstants(commonPasses.GatherConstants.pass x)
+        let this = InlineConstants(common.GatherConstants.pass x)
         this.visitProgram x
         
     override this.visitElement x =
@@ -176,13 +176,99 @@ type LowerParseElementAndParseTemplate() =
     override this.visitRhs x =
         match x with
             | ParseElement(name) ->
-                let factory = Callback({name="syntax_factory"; args=[Literal({lit=Ascii; value=name})]})
-                let parser = Callback({name="syntax_parse"; args=[factory]})
-                Expr(parser)
+                Expr(builtins.syntaxParserFactory name)
             | ParseTemplate(name,bindings) ->
                 let xbindings = bindings |> List.map this.visitExpr
-                let args = Literal({lit=Ascii; value=name}) :: xbindings
-                let factory = Callback({name="template_factory"; args=args})
-                let parser = Callback({name="template_parse"; args=[factory]})
-                Expr(parser)
+                Expr(builtins.templateParserFactory name xbindings)
             | _ -> base.visitRhs x
+
+// transient parsebits should be gone already
+// lhs := [5]; =>
+// if !exists(buffer, cursor, 5) { fatal("Not enough bits"); }
+// lhs := parseBits(buffer, cursor, 5);
+//
+// lhs := [5]{ranges...} =>
+// if !exists(buffer, cursor, 5) { fatal("Not enough bits"); }
+// lhsTmp := parseBits(buffer, cursor, 5);
+// if !(lhs within ranges...) { fatal("Invalid value"); }
+// lhs := lhsTmp
+type LowerParseAssignments() =
+    inherit visitor.Rebuilder()
+    
+    member private this.visitRhsInner r =
+        let failNbits = builtins.fatal "Not enough bits left"
+        match r with
+            | ParseBits(ex) ->
+                let nbits = this.visitExpr ex
+                let cond = Not(builtins.exists nbits)
+                let enough = IfElse(cond, Suite([ExprStmt(failNbits)]), None)
+                let parseBits = Callback({name="parseBits"
+                                          args=[Variable(builtins.bufferVar)
+                                                Variable(builtins.cursorVar)
+                                                nbits]})
+                Some((enough,Expr(parseBits)))
+            | ParseBitsAndValidate(ex, ranges) ->
+                let nbits = this.visitExpr ex
+                let cond = Not(builtins.exists nbits)
+                let enough = IfElse(cond, Suite([ExprStmt(failNbits)]), None)
+                let parseBits = Callback({name="parseBits"
+                                          args=[Variable(builtins.bufferVar)
+                                                Variable(builtins.cursorVar)
+                                                nbits]})
+                // assign to a temporaryId
+                let tmpVar = common.uniqueVar (Some("tmpParse"))
+                let parsed = Rule(ScalarDeclarationAssign({name=tmpVar.name.levels[0];t=Int64(true)},
+                                                          Some(Expr(parseBits))))
+                // check all the ranges
+                let conds = List<expr>()
+                for range in ranges do
+                    let cond = 
+                        match range with
+                            | Single(i) -> Equals(true, [Variable(tmpVar)
+                                                         Literal({lit=Decimal;value=sprintf "%d" i})])
+                            | Lower(i) -> GreaterThan(true, Variable(tmpVar),
+                                                      Literal({lit=Decimal;value=sprintf "%d" i}))
+                            | Upper(i) -> LessThan(true, Variable(tmpVar),
+                                                   Literal({lit=Decimal;value=sprintf "%d" i}))
+                            | Range(l,u) -> And([GreaterThan(true, Variable(tmpVar),
+                                                        Literal({lit=Decimal;value=sprintf "%d" l}));
+                            LessThan(true, Variable(tmpVar), Literal({lit=Decimal;value=sprintf "%d" u}))])
+                    conds.Add(cond)
+                let items = List.ofSeq(conds |> Seq.map id)
+                let cond = Not(Or(items))
+                let checkRanges = IfElse(cond,
+                                         Suite([ExprStmt(builtins.fatal "Parsed value doesn't match range")]),
+                                         None)
+                Some((Suite([enough;parsed;checkRanges]),Expr(Variable(tmpVar))))
+            | _ -> None
+    
+    static member pass x =
+        printfn "==Running pass LowerParseAssignments"
+        LowerParseAssignments().visitProgram x
+        
+    override this.visitStmt x =
+        match x with
+            | Rule(rule) ->
+                match rule with
+                    | ScalarDeclarationAssign(l,r) ->
+                        match r with
+                            | Some(r) ->
+                                let res = this.visitRhsInner r
+                                match res with
+                                    | Some(a,b) ->
+                                        Suite([a
+                                               Rule(ScalarDeclarationAssign(this.visitScalarDeclaration l, Some(b)))])
+                                    | None ->
+                                        Rule(ScalarDeclarationAssign(this.visitScalarDeclaration l, Some(this.visitRhs r)))
+                            | None -> base.visitStmt x
+                    | Assignment(l,r) ->
+                        let res = this.visitRhsInner r
+                        match res with
+                            | Some(a,b) ->
+                                Suite([a
+                                       Rule(Assignment(this.visitLhs l, b))])
+                            | None ->
+                                Rule(Assignment(this.visitLhs l, this.visitRhs r))  
+                    | _ -> base.visitStmt x
+            | _ -> base.visitStmt x    
+    

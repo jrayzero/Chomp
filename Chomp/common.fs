@@ -1,7 +1,18 @@
-module Chomp.commonPasses
+module Chomp.common
 
 open AST
 open visitor
+
+let mutable nextId = 0
+
+let uniqueVar prefix =
+    let prefix =   
+        match prefix with
+            | Some(pref) -> pref
+            | None -> "__x"
+    let name = sprintf "%s%d" prefix nextId
+    nextId <- nextId + 1
+    {name={levels=[name]}}
 
 type GatherConstants() =
     inherit ConstVisitor()

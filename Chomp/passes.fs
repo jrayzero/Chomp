@@ -11,4 +11,6 @@ let runPasses program =
     printfn "%s" (visitor.Regenerate().visitProgram program)
     program <- lower.LowerParseElementAndParseTemplate.pass program
     printfn "%s" (visitor.Regenerate().visitProgram program)
+    program <- lower.LowerParseAssignments.pass program
+    printfn "%s" (visitor.Regenerate().visitProgram program)
     ()
