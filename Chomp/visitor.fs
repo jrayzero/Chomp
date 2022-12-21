@@ -506,24 +506,26 @@ type Regenerate() =
                 let astHeader = indent("ast {\n")
                 let astFooter = indent("}")
                 incr()
-                let astMiddle = sprintf "%s" (ast |> List.map (fun y -> indent(sprintf "%s;" (this.visitAnyDeclaration y))) |> String.concat "\n")
+                let astMiddle = sprintf "%s" (ast |> List.map (fun y -> indent(sprintf "%s;"
+                                                                                   (this.visitAnyDeclaration y)))
+                                              |> String.concat "\n")
                 decr()
-                let sast = sprintf "%s%s\n%s" astHeader astMiddle astFooter
+                let sast = sprintf "%s%s%s" astHeader astMiddle astFooter
                 let sbody = this.visitStmt body 
                 decr()
-                sprintf "syntax %s {\n%s\n%s\n}" name sast sbody
+                sprintf "syntax %s {\n%s\n%s}" name sast sbody
             | Template(name,bindings,body) ->
                 let sbindings = bindings |> List.map this.visitBinding |> String.concat ", "
                 incr()
                 let sbody = this.visitStmt body 
                 decr()
-                sprintf "template %s (%s) {\n%s\n}" name sbindings sbody
+                sprintf "template %s (%s) {\n%s}" name sbindings sbody
             | Constant(name,lit) ->
                 sprintf "constant %s := %s;" name (this.visitLiteral lit)
         
     member this.visitStmt x =
         match x with
-            | Rule(rule) -> indent(sprintf "%s;" (this.visitRule rule))
+            | Rule(rule) -> indent(sprintf "%s;\n" (this.visitRule rule))
             | For(induc, lower, upper, body) ->
                 let l = this.visitExpr lower
                 let u = this.visitExpr upper
@@ -531,7 +533,7 @@ type Regenerate() =
                 let sbody = this.visitStmt body
                 decr()
                 let forFooter = indent("}")
-                indent(sprintf "for %s in %s to %s {\n%s\n%s" induc l u sbody forFooter)
+                indent(sprintf "for %s in %s to %s {\n%s%s\n" induc l u sbody forFooter)
             | IfElse(cond,tBody,fBody) ->
                 let scond = this.visitExpr cond
                 incr()
@@ -543,12 +545,12 @@ type Regenerate() =
                         let sfBody = this.visitStmt body
                         decr()
                         let footer = indent("}")
-                        let top = indent(sprintf "if %s {\n%s\n%s\n" scond stBody footer)
-                        let bottom = indent(sprintf "else {\n%s\n%s" sfBody footer)
-                        sprintf "%s%s" top bottom
+                        let top = indent(sprintf "if %s {\n%s" scond stBody)
+                        let bottom = indent(sprintf "} else {\n%s%s" sfBody footer)
+                        sprintf "%s%s\n" top bottom
                     | None ->
                         let footer = indent("}")
-                        indent(sprintf "if %s {\n%s\n%s" scond stBody footer)
+                        indent(sprintf "if %s {\n%s%s\n" scond stBody footer)
             | Alternate(options) ->
                 incr()
                 let processBody s =
@@ -559,16 +561,17 @@ type Regenerate() =
                 let soptions = options |> List.map (fun (x,y) ->
                     let footer = indent("}")
                     let header = indent("marker")
-                    sprintf "%s %s {\n%s\n%s" header (this.visitMarker x) (processBody y) footer)
+                    sprintf "%s %s {\n%s%s" header (this.visitMarker x) (processBody y) footer)
                                |> String.concat "\n"
                 decr()
                 let footer = indent("}")
-                indent(sprintf "alternate {\n%s\n%s" soptions footer)
-            | Suite(stmts) -> stmts |> List.map this.visitStmt |> String.concat "\n"
-            | ExprStmt(ex) -> indent(sprintf "%s;" (this.visitExpr ex))
+                indent(sprintf "alternate {\n%s%s\n" soptions footer)
+            | Suite(stmts) ->
+                sprintf "%s" (stmts |> List.map this.visitStmt |> String.concat "")
+            | ExprStmt(ex) -> indent(sprintf "%s;\n" (this.visitExpr ex))
             | Push(buff,lower,upper) ->
-                indent(sprintf "push %s %s %s;" (this.visitExpr buff) (this.visitExpr lower) (this.visitExpr upper))
-            | Pop -> indent("pop;")
+                indent(sprintf "push %s %s %s;\n" (this.visitExpr buff) (this.visitExpr lower) (this.visitExpr upper))
+            | Pop -> indent("pop;\n")
             
     member this.visitMarker x =
         match x with
