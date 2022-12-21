@@ -2,7 +2,7 @@
 
 open Chomp.parser
 open Chomp.passes
-open Chomp.visitor
+open Chomp.ASTVisitor
 
 let testKeyword = "test"
 

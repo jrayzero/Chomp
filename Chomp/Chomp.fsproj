@@ -7,12 +7,13 @@
 
     <ItemGroup>
         <Compile Include="AST.fs" />
-        <Compile Include="visitor.fs" />
+        <Compile Include="ASTVisitor.fs" />
         <Compile Include="parser.fs" />
         <Compile Include="builtins.fs" />
         <Compile Include="common.fs" />
         <Compile Include="typecheck.fs" />
         <Compile Include="lower.fs" />
+        <Compile Include="imperativeIR.fs" />
         <Compile Include="codegen.fs" />
         <Compile Include="passes.fs" />
         <Compile Include="Program.fs" />

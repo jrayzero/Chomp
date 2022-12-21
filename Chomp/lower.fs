@@ -6,7 +6,7 @@ open AST
 
 // [x]; => skipBits(x)
 type LowerTransientParseBits() =
-    inherit visitor.Rebuilder()
+    inherit ASTVisitor.Rebuilder()
     
     static member pass x =
         printfn "==Running pass LowerTransientParseBits"
@@ -27,7 +27,7 @@ type LowerTransientParseBits() =
 // wherever a constant is used, replace it with the actual value held by the constant            
 type InlineConstants(constantDecls: Dictionary<string,literal>) =
     
-    inherit visitor.Rebuilder()
+    inherit ASTVisitor.Rebuilder()
     
     // current declarations for a scope
     // if the variable used doesn't exist in the scope (and it's in the position for a constant),
@@ -106,7 +106,7 @@ type InlineConstants(constantDecls: Dictionary<string,literal>) =
             
 // <literal>; => [nbits_in_literal]{value of literal}
 type LowerParseLiteral() =
-    inherit visitor.Rebuilder()
+    inherit ASTVisitor.Rebuilder()
     
     static member pass x =
         printfn "==Running pass LowerParseLiteral"
@@ -147,7 +147,7 @@ type LowerParseLiteral() =
 // <syntax> => parse_syntax(syntax_factory(syntaxName))
 // <template(...)> => parse_template(template_factory(templateName, ...))
 type LowerParseElementAndParseTemplate() =
-    inherit visitor.Rebuilder()
+    inherit ASTVisitor.Rebuilder()
         
     static member pass x =
         printfn "==Running pass LowerParseElementAndParseTemplate"
@@ -179,7 +179,7 @@ type LowerParseElementAndParseTemplate() =
 // tmp := parseBits(buffer, cursor, 5);
 // if !(tmp within ranges...) { fatal("Invalid value"); }
 type LowerParseAssignments() =
-    inherit visitor.Rebuilder()
+    inherit ASTVisitor.Rebuilder()
     
     static member pass x =
         printfn "==Running pass LowerParseAssignments"
@@ -280,7 +280,7 @@ type LowerParseAssignments() =
 //    else { fatal "Alternate failed"; }  
 // }
 type NaiveLowerAlternates() =
-    inherit visitor.Rebuilder()
+    inherit ASTVisitor.Rebuilder()
     
     static member pass x =
         printfn "==Running pass NaiveLowerAlternates"

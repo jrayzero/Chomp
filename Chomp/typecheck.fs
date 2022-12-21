@@ -7,7 +7,7 @@ open Chomp.AST
 open System.Collections.Generic
 
 type TypeCheck() =
-    inherit visitor.ConstVisitor()
+    inherit ASTVisitor.ConstVisitor()
     
     // all constant name
     let constants = HashSet<string>()

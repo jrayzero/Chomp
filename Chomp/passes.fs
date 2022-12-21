@@ -1,15 +1,13 @@
 module Chomp.passes
 
-open AST
-
-let runUnitPass (pass:program->unit) (program:program) =
+let runUnitPass pass program =
     pass program
     program
 
-let runASTPass (pass:program->program) (printAfter:bool) (program:program) =
+let runASTPass pass printAfter program =
     let p = pass(program)
     if printAfter then
-        printfn "%s" (visitor.Regenerate().visitProgram p)
+        printfn "%s" (ASTVisitor.Regenerate().visitProgram p)
     p
 
 let runPasses program =
@@ -20,3 +18,8 @@ let runPasses program =
     |> runASTPass lower.LowerParseElementAndParseTemplate.pass true
     |> runASTPass lower.LowerParseAssignments.pass true
     |> runASTPass lower.NaiveLowerAlternates.pass true
+    |> fun y -> (
+            let prog2 = imperativeIR.ASTToImperativeIR.pass y
+            printfn "%A" prog2
+            prog2
+        )   

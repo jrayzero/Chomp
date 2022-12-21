@@ -1,4 +1,4 @@
-module Chomp.visitor
+module Chomp.ASTVisitor
 
 open AST
 open Chomp.AST

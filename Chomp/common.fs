@@ -1,7 +1,7 @@
 module Chomp.common
 
 open AST
-open visitor
+open ASTVisitor
 
 let mutable nextId = 0
 
