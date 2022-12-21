@@ -36,7 +36,11 @@ type TypeCheck() =
     // var name -> type * is ref * is arr
     let curDecls = List<Dictionary<string,scalarType*bool*bool>>()
     
-    member this.pass x =
+    static member pass x =
+        printfn "==Running pass TypeCheck"
+        TypeCheck().run x
+        
+    member this.run x = 
         this.visitProgram x
         // check constants
         for constant in deferredConstants do

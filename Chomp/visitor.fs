@@ -157,6 +157,7 @@ type ConstVisitor() =
                 this.visitExpr lower
                 this.visitExpr upper
             | Pop -> ()
+            | ExprStmt(e) -> this.visitExpr e
             
     default this.visitMarker x =
         match x with
@@ -352,6 +353,7 @@ type Rebuilder() =
                     this.visitExpr upper
                     )
             | Pop -> Pop
+            | ExprStmt(ex) -> ExprStmt(this.visitExpr ex)
             
     default this.visitMarker x =
         match x with
@@ -360,4 +362,219 @@ type Rebuilder() =
             
     default this.visitProgram x =
         match x with
-            | Program(elems) -> Program(elems |> List.map this.visitElement)            
+            | Program(elems) -> Program(elems |> List.map this.visitElement)
+
+// print out chomp code            
+type Regenerate() =
+    
+    let mutable ind = 0
+    
+    let incr() = ind <- ind + 2
+    let decr() = ind <- ind - 2
+    
+    let indent s =
+        let mutable spaces = ""
+        for i in 0..ind do
+            spaces <- spaces + " "
+        sprintf "%s%s" spaces s
+    
+    member this.visitScalarType x =
+        match x with
+            | Int8(b) -> if b then "int8" else "uint8"
+            | Int16(b) -> if b then "int16" else "uint16"
+            | Int32(b) -> if b then "int32" else "uint32"
+            | Int64(b) -> if b then "int64" else "uint64"
+            | Bool -> "bool"
+            | Float32 -> "float32"
+            | Float64 -> "float64"
+            | SyntaxRef(s) -> s
+            
+    member this.visitIdentifier x =
+        x.levels |> String.concat "."
+        
+    member this.visitVariable (x:variable) =
+        this.visitIdentifier x.name
+        
+    member this.visitLiteral x =
+        match x.lit with
+            | Hex -> $"0x{x.value}"
+            | Decimal -> x.value
+            | Binary -> $"0b{x.value}"
+            | Ascii -> sprintf "\"%s\"" x.value
+        
+    member this.visitExpr x =
+        match x with
+            | Callback(callback) -> this.visitCallback callback
+            | ArrRef(id, idx) ->
+                sprintf "%s[%s]" (this.visitIdentifier id) (this.visitExpr idx)
+            | Invert(ex) -> sprintf "-%s" (this.visitExpr ex)
+            | BInvert(ex) -> sprintf "~%s" (this.visitExpr ex)
+            | Not(ex) -> sprintf "!%s" (this.visitExpr ex)
+            | Multiplication(exs) -> exs |> List.map this.visitExpr |> String.concat " * "
+            | Division(exs) -> exs |> List.map this.visitExpr |> String.concat " / "
+            | Addition(exs) -> exs |> List.map this.visitExpr |> String.concat " + "
+            | Subtraction(exs) -> exs |> List.map this.visitExpr |> String.concat " - "
+            | LeftShift(l,r) -> sprintf "%s << %s" (this.visitExpr l) (this.visitExpr r)
+            | RightShift(l,r) -> sprintf "%s >> %s" (this.visitExpr l) (this.visitExpr r)
+            | GreaterThan(eq,l,r) ->
+                sprintf "%s >%s %s" (this.visitExpr l) (if eq then "=" else "") (this.visitExpr r)
+            | LessThan(eq,l,r) ->
+                sprintf "%s %s %s" (this.visitExpr l) (if eq then "=" else "") (this.visitExpr r)
+            | Equals(eq,exs) ->
+                exs |> List.map this.visitExpr |> String.concat (if eq then " == " else " != ")
+            | BAnd(exs) -> exs |> List.map this.visitExpr |> String.concat " & "
+            | BOr(exs) -> exs |> List.map this.visitExpr |> String.concat " | "
+            | And(exs) -> exs |> List.map this.visitExpr |> String.concat " && "
+            | Or(exs) -> exs |> List.map this.visitExpr |> String.concat " || "
+            | Variable(var) -> this.visitVariable var
+            | Literal(lit) -> this.visitLiteral lit
+                
+    member this.visitCallback x =
+        sprintf "%s(%s)" x.name (x.args |> List.map this.visitExpr |> String.concat ", ")
+        
+    member this.visitRange x =
+        match x with
+            | Single(i) -> sprintf "%d" i
+            | Lower(i) -> sprintf "%d.." i
+            | Upper(i) -> sprintf "..%d" i
+            | Range(l,u) -> sprintf "%d..%d" l u
+        
+    member this.visitScalarDeclaration x =
+        sprintf "%s::%s" x.name (this.visitScalarType x.t)
+        
+    member this.visitArrayDeclaration x =
+        match x with
+            | Stack(name,t,sz) ->
+                sprintf "%s::%s[%d]" name (this.visitScalarType t) sz
+            | Heap(name,t,sz) ->
+                sprintf "@%s::%s[%s]" name (this.visitScalarType t) (this.visitExpr sz)
+        
+    member this.visitAnyDeclaration x =
+        match x with
+            | ScalarDeclaration(scalar) -> this.visitScalarDeclaration scalar
+            | ArrayDeclaration(array) -> this.visitArrayDeclaration array
+        
+    member this.visitLhs x =
+        match x with
+            | ScalarLhs(id) -> this.visitIdentifier id
+            | ArrayLhs(id,idx) -> sprintf "%s[%s]" (this.visitIdentifier id) (this.visitExpr idx)
+        
+    member this.visitRhs x =
+        match x with
+            | ParseBits(ex) -> sprintf "[%s]" (this.visitExpr ex)
+            | ParseBitsAndValidate(ex,ranges) ->
+                sprintf "[%s]{%s}" (this.visitExpr ex) (ranges |> List.map this.visitRange |> String.concat ", ")
+            | ParseElement(name) -> sprintf "<%s>" name
+            | ParseLiteral(lit) -> sprintf "<%s>" (this.visitLiteral lit)
+            | ParseTemplate(name,bindings) ->
+                sprintf "<%s(%s)>" name (bindings |> List.map this.visitExpr |> String.concat ", ")
+            | Expr(ex) -> this.visitExpr ex
+        
+    member this.visitRule x =
+        match x with
+            | ScalarDeclarationAssign(decl,ropt) ->
+                let sdecl = this.visitScalarDeclaration decl
+                match ropt with
+                    | Some(r) -> sprintf "%s := %s" sdecl (this.visitRhs r)
+                    | None -> sdecl
+            | ArrayDeclarationOnly(decl) -> this.visitArrayDeclaration decl
+            | Assignment(l,r) ->
+                let sl = this.visitLhs l
+                let rl = this.visitRhs r
+                sprintf "%s := %s" sl rl
+            | Transient(r) -> this.visitRhs r
+            
+    member this.visitBinding x =
+        match x with
+            | ArrayBinding(ref,t,name) ->
+                let st = sprintf "%s::%s[]" name (this.visitScalarType t)
+                if ref then
+                    sprintf "&%s" st
+                else
+                    st
+            | ScalarBinding(ref,t,name) ->
+                let st = sprintf "%s::%s" name (this.visitScalarType t)
+                if ref then
+                   sprintf "&%s" st
+                else
+                    st
+        
+    member this.visitElement x =
+        match x with
+            | Syntax(name,ast,body) ->
+                incr()
+                let astHeader = indent("ast {\n")
+                let astFooter = indent("}")
+                incr()
+                let astMiddle = sprintf "%s" (ast |> List.map (fun y -> indent(sprintf "%s;" (this.visitAnyDeclaration y))) |> String.concat "\n")
+                decr()
+                let sast = sprintf "%s%s\n%s" astHeader astMiddle astFooter
+                let sbody = this.visitStmt body 
+                decr()
+                sprintf "syntax %s {\n%s\n%s\n}" name sast sbody
+            | Template(name,bindings,body) ->
+                let sbindings = bindings |> List.map this.visitBinding |> String.concat ", "
+                incr()
+                let sbody = this.visitStmt body 
+                decr()
+                sprintf "template %s (%s) {\n%s\n}" name sbindings sbody
+            | Constant(name,lit) ->
+                sprintf "constant %s := %s;" name (this.visitLiteral lit)
+        
+    member this.visitStmt x =
+        match x with
+            | Rule(rule) -> indent(sprintf "%s;" (this.visitRule rule))
+            | For(induc, lower, upper, body) ->
+                let l = this.visitExpr lower
+                let u = this.visitExpr upper
+                incr()
+                let sbody = this.visitStmt body
+                decr()
+                let forFooter = indent("}")
+                indent(sprintf "for %s in %s to %s {\n%s\n%s" induc l u sbody forFooter)
+            | IfElse(cond,tBody,fBody) ->
+                let scond = this.visitExpr cond
+                incr()
+                let stBody = this.visitStmt tBody
+                decr()
+                match fBody with
+                    | Some(body) ->
+                        incr()
+                        let sfBody = this.visitStmt body
+                        decr()
+                        let footer = indent("}")
+                        let top = indent(sprintf "if %s {\n%s\n%s\n" scond stBody footer)
+                        let bottom = indent(sprintf "else {\n%s\n%s" sfBody footer)
+                        sprintf "%s%s" top bottom
+                    | None ->
+                        let footer = indent("}")
+                        indent(sprintf "if %s {\n%s\n%s" scond stBody footer)
+            | Alternate(options) ->
+                incr()
+                let processBody s =
+                    incr()
+                    let ss = this.visitStmt s
+                    decr()
+                    ss
+                let soptions = options |> List.map (fun (x,y) ->
+                    let footer = indent("}")
+                    let header = indent("marker")
+                    sprintf "%s %s {\n%s\n%s" header (this.visitMarker x) (processBody y) footer)
+                               |> String.concat "\n"
+                decr()
+                let footer = indent("}")
+                indent(sprintf "alternate {\n%s\n%s" soptions footer)
+            | Suite(stmts) -> stmts |> List.map this.visitStmt |> String.concat "\n"
+            | ExprStmt(ex) -> indent(sprintf "%s;" (this.visitExpr ex))
+            | Push(buff,lower,upper) ->
+                indent(sprintf "push %s %s %s;" (this.visitExpr buff) (this.visitExpr lower) (this.visitExpr upper))
+            | Pop -> indent("pop;")
+            
+    member this.visitMarker x =
+        match x with
+            | LiteralMarker(lit) -> this.visitLiteral lit
+            | ConstantMarker(s) -> s
+    
+    member this.visitProgram x =
+        match x with
+            | Program(elems) -> elems |> List.map this.visitElement |> String.concat "\n"

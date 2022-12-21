@@ -291,5 +291,5 @@ let parseIt code =
     let parsed = code |> run (programDU() .>> eof)
     parsed |> eprintfn "%A"
     match parsed with
-        | Success(a,_,_) -> a
+        | Success(a,_,_) -> a,parsed
         | Failure _ -> failwith "Parse of input failed!"

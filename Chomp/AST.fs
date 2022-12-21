@@ -99,7 +99,7 @@ type rhs =
     | ParseBitsAndValidate of expr * rhs: range list // [20]{0..2,10} parse the value and then compare to the rhs possibilities
     | ParseElement of string // <SyntaxGroup/constant> (can't actually have template when you are assignment, but can have it for transient)
     | ParseLiteral of literal // <literal>
-    | ParseTemplate of string * expr list
+    | ParseTemplate of string * expr list // <template(bindings...)>
     | Expr of expr // a + b, lets you just assign to some arbitrary expr. doesn't parse anything
 
 type rule =
@@ -121,7 +121,7 @@ type element =
     //   }
     //   ...stmts...
     // }
-    | Syntax of string * ast: anyDeclaration list *  body: stmt
+    | Syntax of string * ast: anyDeclaration list * body: stmt
     // template ident(bindings...) {
     //   ...stmts...
     // }
@@ -139,6 +139,8 @@ and stmt =
     | Alternate of (marker * stmt) list
     // just a list of stmts. not parsed individually
     | Suite of stmt list
+    // just an expression (used internally--this would be parsed as a rule in the frontend)
+    | ExprStmt of expr
     // push getBuffer() lower upper;
     | Push of buffer: expr * lower: expr * upper: expr
     // pop;
