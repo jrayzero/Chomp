@@ -10,6 +10,8 @@
         <Compile Include="visitor.fs" />
         <Compile Include="parser.fs" />
         <Compile Include="typecheck.fs" />
+        <Compile Include="lower.fs" />
+        <Compile Include="codegen.fs" />
         <Compile Include="passes.fs" />
         <Compile Include="Program.fs" />
     </ItemGroup>
