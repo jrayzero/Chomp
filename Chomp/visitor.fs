@@ -40,8 +40,8 @@ type ConstVisitor() =
     default this.visitExpr x =
         match x with
             | Callback(callback) -> this.visitCallback callback
-            | ArrRef(var,idx) ->
-                this.visitVariable var
+            | ArrRef(id,idx) ->
+                this.visitIdentifier id
                 this.visitExpr idx
             | Invert(expr) -> this.visitExpr expr
             | BInvert(expr) -> this.visitExpr expr
@@ -102,7 +102,8 @@ type ConstVisitor() =
             | ParseBitsAndValidate(expr,r) ->
                 this.visitExpr expr
                 r |> List.iter this.visitRange
-            | ParseTemplate(_,e) -> e |> List.iter this.visitExpr              
+            | ParseLiteral(l) -> this.visitLiteral l
+            | ParseTemplate(_,e) -> e |> List.iter this.visitExpr
             | Expr(expr) -> this.visitExpr expr
             | _ -> ()
     
@@ -139,7 +140,6 @@ type ConstVisitor() =
         match x with
             | Rule(rule) -> this.visitRule rule
             | For(induc,lower,upper,body) ->
-                this.visitIdentifier induc
                 this.visitExpr lower
                 this.visitExpr upper
                 this.visitStmt body
@@ -203,9 +203,9 @@ type Rebuilder() =
     default this.visitExpr x =
         match x with
             | Callback(callback) -> Callback(this.visitCallback callback)
-            | ArrRef(var,idx) ->
+            | ArrRef(id,idx) ->
                 ArrRef(
-                    this.visitVariable var,
+                    this.visitIdentifier id,
                     this.visitExpr idx
                     )
             | Invert(expr) -> Invert(this.visitExpr expr)
@@ -283,6 +283,7 @@ type Rebuilder() =
                     r |> List.map this.visitRange
                 )
             | ParseElement(s) -> ParseElement(s)
+            | ParseLiteral(l) -> ParseLiteral(this.visitLiteral l)
             | ParseTemplate(s,e) -> ParseTemplate(s, e |> List.map this.visitExpr)
             | Expr(expr) -> Expr(this.visitExpr expr)
     
@@ -328,7 +329,7 @@ type Rebuilder() =
             | Rule(rule) -> Rule(this.visitRule rule)
             | For(induc,lower,upper,body) ->
                 For (
-                    this.visitIdentifier induc,
+                    induc,
                     this.visitExpr lower,
                     this.visitExpr upper,
                     this.visitStmt body

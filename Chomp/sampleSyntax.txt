@@ -2,26 +2,50 @@
 constant SOI := 0xFFD8; 
 constant EOI := 0xFFD8;
 
-template temp0(arg0, arg1) {
-    arg0 := 9;
-} 
-
-template temp0(arg0, arg1) {
-    arrDecls { float32[] arr; }
-    arg0 := 9; 
-} 
-
-syntax syntaxElem {
-    ^arg0 := [10];
-    arg1[idx] := [4]{..7,9..13,15};
-    for i in 0 to 100 { }
-    if arg0 == 2 { } else { }
-    if arg0 == 4 { }
-    alternate {
-        marker SOI { }
-        marker 0xFF {
-          ^arg1 := arg[19];
-        }
-    } 
+template MyTemplate0(b0::int16, &b1::int32 ,  b2::float32[], b3 :: uint64) {
+    b4::uint8[2];
 }
+
+template MyTemplate1(b0::int16, &b1::int32 ,  b2::float32[], b3 :: uint64) {
+    b4::int32[15];
+    @b5::int64[200];
+    [10]; // transient
+    // declaration
+    b6::int16 := 17;  
+    // assignment to an expr
+    b6 := 9 + b4[0];
+    // assignment to a parsed thing
+    b6 := [4];
+    // call another template
+    <MyTemplate0()>; // transient
+}
+
+syntax MySyntax0 { }
+
+syntax MySyntax1 {
+    ast {
+        // these have top level scope
+        b0::int8;
+        @b1::int16[15];
+        b2::int32[15];
+        b4::MySyntax1;
+    }
+    b5::int32[19];
+    b6::int64[200];
+    if 2 { }
+    if 3 > 2 { } else { }
+    for i in 0 to 10+3 {
+      // a comment
+           alternate {
+               marker SOI { }
+               marker 0xFFD8 {}
+           }
+    }
+    b4:= < MySyntax1>;
+    b7::float32 := <0b10101>;
+    b4.b4 := 10;
+}
+
+
+
 // end comment

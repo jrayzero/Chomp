@@ -17,12 +17,14 @@ type scalarType =
     | Int16 of signed:bool
     | Int32 of signed:bool
     | Int64 of signed:bool
+    | Bool
     | Float32
     | Float64
     | SyntaxRef of string // a reference to a syntax class
 
 type identifier = { levels: string list }
 
+// either for expressions (where it is a number) or for parsing
 type literalType =
     | Hex
     | Decimal
@@ -39,7 +41,7 @@ type literal = { lit : literalType; value: string}
 type expr =
     // 0
     | Callback of callback // foo(args...)
-    | ArrRef of variable * idx: expr // arr[idx]
+    | ArrRef of identifier * idx: expr // arr[idx]
     // 1
     | Invert of expr // -expr 
     | BInvert of expr // ~expr
@@ -96,6 +98,7 @@ type rhs =
     | ParseBits of expr // [20] if lvalue is a storage, keep the value, otherwise just toss it
     | ParseBitsAndValidate of expr * rhs: range list // [20]{0..2,10} parse the value and then compare to the rhs possibilities
     | ParseElement of string // <SyntaxGroup/constant> (can't actually have template when you are assignment, but can have it for transient)
+    | ParseLiteral of literal // <literal>
     | ParseTemplate of string * expr list
     | Expr of expr // a + b, lets you just assign to some arbitrary expr. doesn't parse anything
 
@@ -129,7 +132,7 @@ type element =
 and stmt =
     | Rule of rule
     // for i in lower to upper { body }
-    | For of induc: identifier * lower: expr * upper: expr * body: stmt
+    | For of induc: string * lower: expr * upper: expr * body: stmt
     // if cond { } [else { }]
     | IfElse of cond: expr * tBody: stmt * fBody: option<stmt>
     // alternate { marker <marker> { } marker <marker> { } }

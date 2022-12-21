@@ -3,12 +3,6 @@ module Chomp.parser
 open Chomp.AST
 open FParsec
 
-// Notes:
-// |> => for combining parser generators (the normal forward pipe usage)
-// a .>> b => parse a then b, return a's result
-// a >>. b => parse a then b, return b's result
-// a .>>. b => parse a then b, return both results in tuple
-
 // TODO there are some egregious uses of backtracking, as well as spaces
 
 let comment() = attempt (spaces .>> skipString "//" >>. skipRestOfLine true >>. many skipNewline)
@@ -51,18 +45,19 @@ let identifierRecord() =
 
 let scalarTypeDU() =
     (skipString "int" >>.
-        ((skipString "8" |>> (fun _ -> Int8(true)))
-        <|> (skipString "16" |>> (fun _ -> Int16(true)))
-        <|> (skipString "32" |>> (fun _ -> Int32(true)))
-        <|> (skipString "64" |>> (fun _ -> Int64(true)))))
+        ((skipString "8" |>> fun _ -> Int8(true))
+        <|> (skipString "16" |>> fun _ -> Int16(true))
+        <|> (skipString "32" |>> fun _ -> Int32(true))
+        <|> (skipString "64" |>> fun _ -> Int64(true))))
     <|> (skipString "uint" >>.
-        ((skipString "8" |>> (fun _ -> Int8(false)))
-        <|> (skipString "16" |>> (fun _ -> Int16(false)))
-        <|> (skipString "32" |>> (fun _ -> Int32(false)))
-        <|> (skipString "64" |>> (fun _ -> Int64(false)))))
+        ((skipString "8" |>> fun _ -> Int8(false))
+        <|> (skipString "16" |>> fun _ -> Int16(false))
+        <|> (skipString "32" |>> fun _ -> Int32(false))
+        <|> (skipString "64" |>> fun _ -> Int64(false))))
     <|> (skipString "float" >>.
-         ((skipString "32" |>> (fun _ -> Float32))
-         <|> (skipString "64" |>> (fun _ -> Float64))))
+         ((skipString "32" |>> fun _ -> Float32)
+         <|> (skipString "64" |>> fun _ -> Float64)))
+    <|> (skipString "bool" |>> fun _ -> Bool)
     <|> (singleIdentifierLevel() |>> SyntaxRef)  
 
 let literalRecord() =
@@ -88,7 +83,7 @@ let exprDU_callback() =
     |>> fun (n,l) -> Callback({name=n;args=l})
     
 let exprDU_arrref() =
-    identifierRecord() .>>. (betweenType "[" "]" opp.ExpressionParser) |>> fun (n,l) -> ArrRef({name=n}, l)
+    identifierRecord() .>>. (betweenType "[" "]" opp.ExpressionParser) |>> ArrRef 
     
 let exprDU_variable() = identifierRecord() |>> fun v -> Variable({name=v})    
     
@@ -173,6 +168,9 @@ let rhsDU_ParseBitsAndValidate() =
 let rhsDU_ParseElement() =
     (betweenType "<" ">" (singleIdentifierLevel() |>> ParseElement))
     
+let rhsDU_ParseLiteral() =
+    (betweenType "<" ">" (literalRecord() |>> ParseLiteral))    
+    
 let rhsDU_ParseTemplate() =
     (betweenType "<" ">" (singleIdentifierLevel() .>>. (argLikeList "(" ")" "," (exprDU())) |>> ParseTemplate))    
     
@@ -180,6 +178,7 @@ let rhsDU() =
     attempt (rhsDU_ParseBitsAndValidate())
     <|> rhsDU_ParseBits()
     <|> attempt (rhsDU_ParseTemplate())
+    <|> attempt (rhsDU_ParseLiteral())
     <|> rhsDU_ParseElement()
     <|> (exprDU() |>> Expr)
 
@@ -205,7 +204,7 @@ let stmtParser,stmtRef = createParserForwardedToRef()
 let stmtDU_Rule() = ruleDU() |>> Rule
 
 let stmtDU_For() =
-    let induction = skipString "for" >>. spaces1 >>. singleIdentifierLevel() |>> (fun i -> {levels=[i]}) .>> spaces
+    let induction = skipString "for" >>. spaces1 >>. singleIdentifierLevel() .>> spaces
     let range = skipString "in" >>. spaces1 >>. exprDU() .>> spaces .>> skipString "to" .>> spaces1 .>>. exprDU()
     let body = betweenType "{" "}" (many (commentSpaces() >>. stmtParser) |>> Suite)
     let loop = induction .>>. range .>>. body .>> commentSpaces()
@@ -229,7 +228,8 @@ let markerDU_ConstantMarker() =
 let markerDU() =
     markerDU_LiteralMarker() <|> markerDU_ConstantMarker()
 
-let markerBody() = skipString "marker" >>. spaces1 >>. markerDU() .>> spaces .>>. betweenType "{" "}" ((many stmtParser) |>> Suite)
+let markerBody() = commentSpaces() >>. skipString "marker" >>. spaces1 >>. markerDU() .>> spaces .>>.
+                    betweenType "{" "}" ((many stmtParser) |>> Suite)
 
 let stmtDU_Alternate() =
     skipString "alternate" >>. spaces1 >>. betweenType "{" "}" (many1 (markerBody())) |>> Alternate
@@ -248,7 +248,8 @@ let stmtDU() =
 let elementDU_Syntax() =
     let decl =
         skipString "syntax" >>. spaces1 >>. singleIdentifierLevel() .>> commentSpaces() 
-    let ast = spaces >>. opt (skipString "ast" >>. commentSpaces() >>. betweenType "{" "}" (many (anyDeclarationDU())))
+    let ast = spaces >>. opt (skipString "ast" >>. commentSpaces()
+                              >>. betweenType "{" "}" (many (commentSpaces() >>. anyDeclarationDU())))
     let stmts = commentSpaces() >>. (many (commentSpaces() >>. stmtDU()))        
     let body = betweenType "{" "}" (ast .>>. stmts)
     decl .>>. body |>> fun (name,(ast,body)) ->
