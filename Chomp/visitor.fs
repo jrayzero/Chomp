@@ -407,25 +407,25 @@ type Regenerate() =
             | Callback(callback) -> this.visitCallback callback
             | ArrRef(id, idx) ->
                 sprintf "%s[%s]" (this.visitIdentifier id) (this.visitExpr idx)
-            | Invert(ex) -> sprintf "-%s" (this.visitExpr ex)
-            | BInvert(ex) -> sprintf "~%s" (this.visitExpr ex)
-            | Not(ex) -> sprintf "!%s" (this.visitExpr ex)
-            | Multiplication(exs) -> exs |> List.map this.visitExpr |> String.concat " * "
-            | Division(exs) -> exs |> List.map this.visitExpr |> String.concat " / "
-            | Addition(exs) -> exs |> List.map this.visitExpr |> String.concat " + "
-            | Subtraction(exs) -> exs |> List.map this.visitExpr |> String.concat " - "
-            | LeftShift(l,r) -> sprintf "%s << %s" (this.visitExpr l) (this.visitExpr r)
-            | RightShift(l,r) -> sprintf "%s >> %s" (this.visitExpr l) (this.visitExpr r)
+            | Invert(ex) -> sprintf "-(%s)" (this.visitExpr ex)
+            | BInvert(ex) -> sprintf "~(%s)" (this.visitExpr ex)
+            | Not(ex) -> sprintf "!(%s)" (this.visitExpr ex)
+            | Multiplication(exs) -> exs |> List.map this.visitExpr |> List.map (fun s -> sprintf "(%s)" s) |> String.concat " * "
+            | Division(exs) -> exs |> List.map this.visitExpr |> List.map (fun s -> sprintf "(%s)" s) |> String.concat " / "
+            | Addition(exs) -> exs |> List.map this.visitExpr |> List.map (fun s -> sprintf "(%s)" s) |> String.concat " + "
+            | Subtraction(exs) -> exs |> List.map this.visitExpr |> List.map (fun s -> sprintf "(%s)" s) |> String.concat " - "
+            | LeftShift(l,r) -> sprintf "(%s) << (%s)" (this.visitExpr l) (this.visitExpr r)
+            | RightShift(l,r) -> sprintf "(%s) >> (%s)" (this.visitExpr l) (this.visitExpr r)
             | GreaterThan(eq,l,r) ->
-                sprintf "%s >%s %s" (this.visitExpr l) (if eq then "=" else "") (this.visitExpr r)
+                sprintf "(%s) >%s (%s)" (this.visitExpr l) (if eq then "=" else "") (this.visitExpr r)
             | LessThan(eq,l,r) ->
-                sprintf "%s %s %s" (this.visitExpr l) (if eq then "=" else "") (this.visitExpr r)
+                sprintf "(%s) %s (%s)" (this.visitExpr l) (if eq then "=" else "") (this.visitExpr r)
             | Equals(eq,exs) ->
-                exs |> List.map this.visitExpr |> String.concat (if eq then " == " else " != ")
-            | BAnd(exs) -> exs |> List.map this.visitExpr |> String.concat " & "
-            | BOr(exs) -> exs |> List.map this.visitExpr |> String.concat " | "
-            | And(exs) -> exs |> List.map this.visitExpr |> String.concat " && "
-            | Or(exs) -> exs |> List.map this.visitExpr |> String.concat " || "
+                exs |> List.map this.visitExpr |> List.map (fun s -> sprintf "(%s)" s) |> String.concat (if eq then " == " else " != ")
+            | BAnd(exs) -> exs |> List.map this.visitExpr |> List.map (fun s -> sprintf "(%s)" s) |> String.concat " & "
+            | BOr(exs) -> exs |> List.map this.visitExpr |> List.map (fun s -> sprintf "(%s)" s) |> String.concat " | "
+            | And(exs) -> exs |> List.map this.visitExpr |> List.map (fun s -> sprintf "(%s)" s) |> String.concat " && "
+            | Or(exs) -> exs |> List.map this.visitExpr |> List.map (fun s -> sprintf "(%s)" s) |> String.concat " || "
             | Variable(var) -> this.visitVariable var
             | Literal(lit) -> this.visitLiteral lit
                 
