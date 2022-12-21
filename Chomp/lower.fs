@@ -17,10 +17,7 @@ type LowerTransientParseBits() =
     
     static member pass x =
         printfn "==Running pass LowerTransientParseBits"
-        LowerTransientParseBits().run x
-    
-    member this.run x =
-        this.visitProgram x
+        LowerTransientParseBits().visitProgram x
     
     override this.visitStmt x =
         match x with
@@ -121,10 +118,7 @@ type LowerParseLiteral() =
     
     static member pass x =
         printfn "==Running pass LowerParseLiteral"
-        LowerParseLiteral().run x
-    
-    member this.run x =
-        this.visitProgram x
+        LowerParseLiteral().visitProgram x
     
     override this.visitRhs x =
         match x with
@@ -169,3 +163,26 @@ type LowerParseLiteral() =
                 ParseBitsAndValidate(newLit, [Single(dec)])
             | _ -> base.visitRhs x
 
+// constants must already be lowered
+// <syntax> => parse_syntax(syntax_factory(syntaxName))
+// <template(...)> => parse_template(template_factory(templateName, ...))
+type LowerParseElementAndParseTemplate() =
+    inherit visitor.Rebuilder()
+        
+    static member pass x =
+        printfn "==Running pass LowerParseElementAndParseTemplate"
+        LowerParseElementAndParseTemplate().visitProgram x
+        
+    override this.visitRhs x =
+        match x with
+            | ParseElement(name) ->
+                let factory = Callback({name="syntax_factory"; args=[Literal({lit=Ascii; value=name})]})
+                let parser = Callback({name="syntax_parse"; args=[factory]})
+                Expr(parser)
+            | ParseTemplate(name,bindings) ->
+                let xbindings = bindings |> List.map this.visitExpr
+                let args = Literal({lit=Ascii; value=name}) :: xbindings
+                let factory = Callback({name="template_factory"; args=args})
+                let parser = Callback({name="template_parse"; args=[factory]})
+                Expr(parser)
+            | _ -> base.visitRhs x
