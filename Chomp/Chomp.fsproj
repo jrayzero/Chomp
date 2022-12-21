@@ -9,6 +9,7 @@
         <Compile Include="AST.fs" />
         <Compile Include="visitor.fs" />
         <Compile Include="parser.fs" />
+        <Compile Include="commonPasses.fs" />
         <Compile Include="typecheck.fs" />
         <Compile Include="lower.fs" />
         <Compile Include="codegen.fs" />
