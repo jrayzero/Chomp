@@ -1,19 +1,13 @@
-module Chomp.parser
+module AST.parser
 
-open Chomp.AST
 open FParsec
-
-// Notes:
-// |> => for combining parser generators (the normal forward pipe usage)
-// a .>> b => parse a then b, return a's result
-// a >>. b => parse a then b, return b's result
-// a .>>. b => parse a then b, return both results in tuple
+open AST
 
 // TODO there are some egregious uses of backtracking, as well as spaces
 
-let comment() = skipString "//" >>. skipRestOfLine true >>. many skipNewline
+let comment() = attempt (spaces .>> skipString "//" >>. skipRestOfLine true >>. many skipNewline)
 
-let commentSpaces() = spaces .>> opt(many (comment())) 
+let commentSpaces() = spaces .>> many (comment()) 
 
 // Use to trace parsing (parser <!>)
 let (<!>) (p: Parser<_,_>) label : Parser<_,_> =
@@ -39,21 +33,6 @@ let freeArgLikeList delim innerParser =
     
 let freeArgLikeList1 delim innerParser =
     sepBy1 (innerParser .>> spaces) (skipString delim .>> spaces)    
-    
-let scalarDUT() =
-    (skipString "int" >>.
-        (skipString "8" |>> (fun _ -> Int8(true)))
-        <|> (skipString "16" |>> (fun _ -> Int16(true)))
-        <|> (skipString "32" |>> (fun _ -> Int32(true)))
-        <|> (skipString "64" |>> (fun _ -> Int64(true))))
-    <|> (skipString "uint" >>.
-        (skipString "8" |>> (fun _ -> Int8(false)))
-        <|> (skipString "16" |>> (fun _ -> Int16(false)))
-        <|> (skipString "32" |>> (fun _ -> Int32(false)))
-        <|> (skipString "64" |>> (fun _ -> Int64(false))))
-    <|> (skipString "float" >>.
-         (skipString "32" |>> (fun _ -> Float32))
-         <|> (skipString "64" |>> (fun _ -> Float64)))
 
 let singleIdentifierLevel() = 
     let isAsciiIdStart c = isAsciiLetter c || c = '_'
@@ -63,6 +42,23 @@ let singleIdentifierLevel() =
 
 let identifierRecord() =
     freeArgLikeList1 "." (singleIdentifierLevel()) |>> (fun i -> {levels=i})
+
+let scalarTypeDU() =
+    (skipString "int" >>.
+        ((skipString "8" |>> fun _ -> Int8(true))
+        <|> (skipString "16" |>> fun _ -> Int16(true))
+        <|> (skipString "32" |>> fun _ -> Int32(true))
+        <|> (skipString "64" |>> fun _ -> Int64(true))))
+    <|> (skipString "uint" >>.
+        ((skipString "8" |>> fun _ -> Int8(false))
+        <|> (skipString "16" |>> fun _ -> Int16(false))
+        <|> (skipString "32" |>> fun _ -> Int32(false))
+        <|> (skipString "64" |>> fun _ -> Int64(false))))
+    <|> (skipString "float" >>.
+         ((skipString "32" |>> fun _ -> Float32)
+         <|> (skipString "64" |>> fun _ -> Float64)))
+    <|> (skipString "bool" |>> fun _ -> Bool)
+    <|> (singleIdentifierLevel() |>> SyntaxRef)  
 
 let literalRecord() =
     let hex = skipString "0x" >>. many1 hex .>> commentSpaces() 
@@ -83,12 +79,13 @@ let exprDU_Literal() =
 let opp = OperatorPrecedenceParser<expr,unit,unit>()
 
 let exprDU_callback() =
-    identifierRecord() .>> spaces .>>. (argLikeList "(" ")" "," (opp.ExpressionParser)) |>> fun (n,l) -> Callback({name=n;args=l})
+    singleIdentifierLevel() .>> spaces .>>. (argLikeList "(" ")" "," opp.ExpressionParser)
+    |>> fun (n,l) -> Callback({name=n;args=l})
     
 let exprDU_arrref() =
-    identifierRecord() .>>. (betweenType "[" "]" opp.ExpressionParser) |>> fun (n,l) -> ArrRef(variable.Default n, l)
+    identifierRecord() .>>. (betweenType "[" "]" opp.ExpressionParser) |>> ArrRef 
     
-let exprDU_variable() = identifierRecord() |>> fun v -> Variable(variable.Default v)    
+let exprDU_variable() = identifierRecord() |>> fun v -> Variable({name=v})    
     
 // literal, variable, callback, arref
 let exprDU_Primitives() =
@@ -132,74 +129,90 @@ let rangeDU () =
     <|> attempt (notEmpty (rangeDU_Lower()))
     <|> rangeDU_Single()
 
-let lvalueDU_ScalarL () =
-    skipString "^" >>. identifierRecord() |>> fun i -> ScalarL(true, i)
-    <|> (identifierRecord() |>> fun i -> ScalarL(false, i))
+let scalarDeclarationExpr() =
+    singleIdentifierLevel() .>> spaces .>> skipString "::" .>> spaces .>>. scalarTypeDU() .>> spaces
     
-let lvalueDU_ArrL () =
-    // skipString "^" >>. identifierRecord() .>>. (betweenType "[" "]" opp.ExpressionParser) |>> fun (n,l) -> ArrL(true, n, l)
-    identifierRecord() .>>. (betweenType "[" "]" opp.ExpressionParser) |>> ArrL
-    
-let lvalueDU() =
-    attempt (notEmpty (lvalueDU_ArrL())) <|> lvalueDU_ScalarL()
-    
-let parsingRValueDU_ParseBits() = betweenType "[" "]" (exprDU()) |>> ParseBits
-let parsingRValueDU_ParseBitsAndValidate() =
-    (betweenType "[" "]" (exprDU())) .>>. (argLikeList1 "{" "}" "," (rangeDU())) |>> ParseBitsAndValidate  
-let parsingRValueDU_ParseElement() =
-    (betweenType "<" ">" (identifierRecord() |>> ParseElement))
-let parsingRValueDU() =
-    attempt (parsingRValueDU_ParseBitsAndValidate())
-    <|> parsingRValueDU_ParseBits()
-    <|> parsingRValueDU_ParseElement()
-    
-let rvalueDU_Expr() = exprDU() |>> Expr
+let scalarDeclarationRecord() =
+    singleIdentifierLevel() .>> spaces .>> skipString "::" .>> spaces .>>. scalarTypeDU() .>> commentSpaces()
+        .>> skipString ";" .>> commentSpaces() |>> fun (x,y) -> {name=x; t=y} 
 
-let rvalueDU() =
-    ((parsingRValueDU() |>> ParsingRValue) <|> rvalueDU_Expr()) .>> commentSpaces()
+let arrayEmptyDeclarationExpr() =
+    singleIdentifierLevel() .>> spaces .>> skipString "::" .>> spaces .>>. scalarTypeDU() 
+        .>> skipString "[]" .>> spaces
 
-let ruleDU_PersistentLValue() =
-    lvalueDU() .>> skipString ":=" .>> commentSpaces() .>>. rvalueDU() .>> skipString ";" .>> commentSpaces()  |>> PersistentLValue
+let arrayDeclarationDU() =
+    let heap = skipString "@" >>. singleIdentifierLevel() .>> spaces .>> skipString "::" .>>. scalarTypeDU() .>> spaces
+               .>> skipString "[" .>>. exprDU() .>> skipString "]" .>> commentSpaces() .>> skipString ";"
+                .>> commentSpaces() |>> fun ((a,b),c) -> Heap(a,b,c)
+    let stack = singleIdentifierLevel() .>> spaces .>> skipString "::" .>>. scalarTypeDU() .>> spaces
+               .>> skipString "[" .>>. pint64 .>> skipString "]" .>> commentSpaces() .>> skipString ";"
+                .>> commentSpaces() |>> fun ((a,b),c) -> Stack(a,b,c)
+    heap <|> stack                
+
+let anyDeclarationDU() =
+    (attempt (arrayDeclarationDU() |>> ArrayDeclaration))
+     <|> (scalarDeclarationRecord() |>> anyDeclaration.ScalarDeclaration)
+     
+let lhsDU() =
+    identifierRecord() .>>. opt (skipString "[" >>. spaces >>. exprDU() .>> spaces .>> skipString "]")
+        .>> commentSpaces() |>> fun (x,y) ->
+            match y with
+                | Some(e) -> ArrayLhs(x,e)
+                | None -> ScalarLhs(x)
     
-let ruleDU_TransientLValue() =
-    skipString "$" >>. spaces >>. skipString ":=" >>. commentSpaces() >>. parsingRValueDU() .>> skipString ";" .>> commentSpaces() 
-        |>> TransientLValue
+let rhsDU_ParseBits() = betweenType "[" "]" (exprDU()) |>> ParseBits
+
+let rhsDU_ParseBitsAndValidate() =
+    (betweenType "[" "]" (exprDU())) .>>. (argLikeList1 "{" "}" "," (rangeDU())) |>> ParseBitsAndValidate
+
+let rhsDU_ParseElement() =
+    (betweenType "<" ">" (singleIdentifierLevel() |>> ParseElement))
+    
+let rhsDU_ParseLiteral() =
+    (betweenType "<" ">" (literalRecord() |>> ParseLiteral))    
+    
+let rhsDU_ParseTemplate() =
+    (betweenType "<" ">" (singleIdentifierLevel() .>>. (argLikeList "(" ")" "," (exprDU())) |>> ParseTemplate))    
+    
+let rhsDU() =
+    attempt (rhsDU_ParseBitsAndValidate())
+    <|> rhsDU_ParseBits()
+    <|> attempt (rhsDU_ParseTemplate())
+    <|> attempt (rhsDU_ParseLiteral())
+    <|> rhsDU_ParseElement()
+    <|> (exprDU() |>> Expr)
+
+let ruleDU_ScalarDeclarationAssign() =
+    scalarDeclarationExpr() .>> spaces .>>. opt (skipString ":=" .>> commentSpaces() >>. rhsDU() .>> commentSpaces())
+        .>> skipString ";" .>> commentSpaces() |>> fun ((x,y),o) -> ScalarDeclarationAssign({name=x;t=y},o)
+        
+let ruleDU_ArrayDeclarationOnly() =
+    arrayDeclarationDU() |>> ArrayDeclarationOnly
+        
+let ruleDU_Assignment() = lhsDU() .>> spaces .>> skipString ":=" .>> commentSpaces() .>>. rhsDU() .>> commentSpaces()
+                          .>> skipString ";" .>> commentSpaces() |>> Assignment
+let ruleDU_Transient() = rhsDU() .>> commentSpaces() .>> skipString ";" .>> commentSpaces() |>> Transient                          
         
 let ruleDU() =
-    ruleDU_TransientLValue() <|> ruleDU_PersistentLValue() 
+    attempt (notEmpty (ruleDU_ScalarDeclarationAssign()))
+    <|> (attempt (notEmpty (ruleDU_ArrayDeclarationOnly())))
+    <|> (attempt (notEmpty (ruleDU_Assignment())))
+    <|> ruleDU_Transient()
 
-type proxy = Proxy of identifier * int64
-
-let arrDecls() =
-    let heapAST = skipString "^" >>. spaces >>. scalarDUT()
-               .>>. (skipString "[" .>> spaces .>> skipString "]" .>> spaces >>. singleIdentifierLevel())
-                .>> spaces |>> fun (a,b) -> Heap(true, b, a)    
-    let heapLocal = scalarDUT()
-               .>>. (skipString "[" .>> spaces .>> skipString "]" .>> spaces >>. singleIdentifierLevel())
-                .>> spaces |>> fun (a,b) -> Heap(false, b, a)
-    let arraySz = skipString "[" .>> spaces >>. pint64 .>> spaces .>> (skipString "]")                 
-    let stackAST = skipString "^" >>. spaces >>. scalarDUT()
-                .>>. arraySz .>> spaces .>>. singleIdentifierLevel() .>> spaces 
-                     |>> fun ((t,v),i) -> Stack(false, i, t, v)
-    let stackLocal = scalarDUT()
-                .>>. arraySz .>> spaces .>>. singleIdentifierLevel() .>> spaces 
-                     |>> fun ((t,v),i) -> Stack(false, i, t, v)                      
-    (attempt (heapAST <|> heapLocal) <|> (stackAST <|> stackLocal)) .>> spaces .>> skipString ";"  .>> commentSpaces()                    
-    
 let stmtParser,stmtRef = createParserForwardedToRef()
 
 let stmtDU_Rule() = ruleDU() |>> Rule
 
 let stmtDU_For() =
-    let induction = skipString "for" >>. spaces1 >>. singleIdentifierLevel() |>> (fun i -> {levels=[i]}) .>> spaces
-    let range = skipString "in" >>. spaces1 >>. exprDU() .>> spaces .>> skipString "to" .>> spaces1 .>>. exprDU() .>> spaces
-    let body = betweenType "{" "}" (many stmtParser |>> Suite)
+    let induction = skipString "for" >>. spaces1 >>. singleIdentifierLevel() .>> spaces
+    let range = skipString "in" >>. spaces1 >>. exprDU() .>> spaces .>> skipString "to" .>> spaces1 .>>. exprDU()
+    let body = betweenType "{" "}" (many (commentSpaces() >>. stmtParser) |>> Suite)
     let loop = induction .>>. range .>>. body .>> commentSpaces()
     loop |>> fun ((induc,(lower,upper)),body) -> For(induc,lower,upper,body)
     
 let stmtDU_If() =
-    let ifPart = skipString "if" >>. spaces1 >>. exprDU() .>>. betweenType "{" "}" (many stmtParser)
-    let elsePart = opt (spaces >>. skipString "else" >>. commentSpaces() >>. betweenType "{" "}" (many stmtParser))
+    let ifPart = skipString "if" >>. spaces1 >>. exprDU() .>>. betweenType "{" "}" (many (commentSpaces() >>. stmtParser))
+    let elsePart = opt (spaces >>. skipString "else" >>. commentSpaces() >>. betweenType "{" "}" (many (commentSpaces() >>. stmtParser)))
     let ifElse = ifPart .>>. elsePart .>> commentSpaces()
     ifElse |>> fun ((cond,iBody),eBody) ->
         match eBody with
@@ -215,7 +228,8 @@ let markerDU_ConstantMarker() =
 let markerDU() =
     markerDU_LiteralMarker() <|> markerDU_ConstantMarker()
 
-let markerBody() = skipString "marker" >>. spaces1 >>. markerDU() .>> spaces .>>. betweenType "{" "}" ((many stmtParser) |>> Suite)
+let markerBody() = commentSpaces() >>. skipString "marker" >>. spaces1 >>. markerDU() .>> spaces .>>.
+                    betweenType "{" "}" ((many stmtParser) |>> Suite)
 
 let stmtDU_Alternate() =
     skipString "alternate" >>. spaces1 >>. betweenType "{" "}" (many1 (markerBody())) |>> Alternate
@@ -234,39 +248,37 @@ let stmtDU() =
 let elementDU_Syntax() =
     let decl =
         skipString "syntax" >>. spaces1 >>. singleIdentifierLevel() .>> commentSpaces() 
-    let stmts = spaces >>. (many (spaces >>. stmtDU()))
-    let arrs = spaces >>. opt (skipString "arrDecls" >>. commentSpaces() >>. betweenType "{" "}" (many (arrDecls())))
-    let body = betweenType "{" "}" (arrs .>>. stmts)
-    decl .>>. body |>> fun (id,(arrs,body)) ->
-        match arrs with
-            | Some(a) -> Syntax(id,a,Suite(body))
-            | None -> Syntax(id,[],Suite(body))
+    let ast = spaces >>. opt (skipString "ast" >>. commentSpaces()
+                              >>. betweenType "{" "}" (many (commentSpaces() >>. anyDeclarationDU())))
+    let stmts = commentSpaces() >>. (many (commentSpaces() >>. stmtDU()))        
+    let body = betweenType "{" "}" (ast .>>. stmts)
+    decl .>>. body |>> fun (name,(ast,body)) ->
+        match ast with
+            | Some(a) -> Syntax(name, a, Suite(body))
+            | None -> Syntax(name, [], Suite(body))
 
 let templateBinding() =
+    let array = arrayEmptyDeclarationExpr() |>> fun (x,y) -> (true,x,y)
+    let scalar = scalarDeclarationExpr() |>> fun (x,y) -> (false,x,y)
     
-    let arr = skipString "[]" |>> fun _ -> true
-    let sca = spaces |>> fun _ -> false
-    
-    let refVar = skipString "&" >>. (singleIdentifierLevel()) .>>. (arr <|> sca)
-                    |>> fun (l, b) -> if b then ArrayBinding(true,l) else ScalarBinding(true,l)
-    let nonRefVar = (singleIdentifierLevel()) .>>. (arr <|> sca)
-                    |>> fun (l, b) -> if b then ArrayBinding(false,l) else ScalarBinding(false,l)
-    refVar <|> nonRefVar                    
+    let refVar = skipString "&" >>. (attempt array <|> scalar) |>> fun (a,b,c) ->
+                    if a then ArrayBinding(true,c,b) else ScalarBinding(true,c,b)
+    let nonRefVar = ((attempt array) <|> scalar) |>> fun (a,b,c) ->
+                    if a then ArrayBinding(false,c,b) else ScalarBinding(false,c,b)                    
+    refVar <|> nonRefVar
     
 let elementDU_Template() =
     let decl =
-        skipString "template" >>. spaces1 >>. (singleIdentifierLevel() .>> spaces) .>>. argLikeList "(" ")" "," (templateBinding())
-    let stmts = spaces >>. (many (stmtDU()))
-    let arrs = spaces >>. opt (skipString "arrDecls" >>. commentSpaces() >>. betweenType "{" "}" (many (arrDecls())))
-    let body = betweenType "{" "}" (arrs .>>. stmts)
-    decl .>>. body |>> fun ((id,bindings),(arrs,body)) ->
-        match arrs with
-            | Some(a) -> Template(id,bindings,a,Suite(body))
-            | None -> Template(id,bindings,[],Suite(body))
+        skipString "template" >>. spaces1 >>. singleIdentifierLevel() .>> spaces
+        .>>. argLikeList "(" ")" "," (templateBinding()) .>> commentSpaces() 
+    let stmts = commentSpaces() >>. (many (commentSpaces() >>. stmtDU()))            
+    let body = betweenType "{" "}" stmts
+    decl .>>. body |>> fun ((name,bindings),body) -> Template(name, bindings, Suite(body))
     
 let elementDU_Constant() =
     skipString "constant" >>. spaces1 >>. singleIdentifierLevel()
-        .>>. (spaces >>. skipString ":=" >>. commentSpaces() >>. literalRecord() .>> commentSpaces() .>> skipString ";" .>> commentSpaces()) |>> Constant
+        .>>. (spaces >>. skipString ":=" >>. commentSpaces() >>. literalRecord() .>> commentSpaces()
+              .>> skipString ";" .>> commentSpaces()) |>> Constant
     
 let elementDU() =
     elementDU_Template() <|> elementDU_Syntax() <|> elementDU_Constant()
@@ -279,5 +291,5 @@ let parseIt code =
     let parsed = code |> run (programDU() .>> eof)
     parsed |> eprintfn "%A"
     match parsed with
-        | Success(a,b,c) -> a
+        | Success(a,_,_) -> a,parsed
         | Failure _ -> failwith "Parse of input failed!"

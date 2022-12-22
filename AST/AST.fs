@@ -1,4 +1,4 @@
-module Chomp.AST
+module AST.AST
 
 // Scoping:
 // All variables are element-scoped (i.e. within Template or Syntax). This emans we can pre-gather all the variables.
@@ -17,16 +17,23 @@ type scalarType =
     | Int16 of signed:bool
     | Int32 of signed:bool
     | Int64 of signed:bool
+    | Bool
     | Float32
     | Float64
+    | SyntaxRef of string // a reference to a syntax class
 
 type identifier = { levels: string list }
 
+// either for expressions (where it is a number) or for parsing
 type literalType =
     | Hex
     | Decimal
     | Binary
     | Ascii
+    
+type variable = { name: identifier; }
+
+type literal = { lit : literalType; value: string}   
     
 // the numbers represent the precedence (copies from C)
 // we only have left-associativity, so we don't need to worry really
@@ -34,7 +41,7 @@ type literalType =
 type expr =
     // 0
     | Callback of callback // foo(args...)
-    | ArrRef of variable * idx: expr // arr[idx]
+    | ArrRef of identifier * idx: expr // arr[idx]
     // 1
     | Invert of expr // -expr 
     | BInvert of expr // ~expr
@@ -65,75 +72,75 @@ type expr =
     | Variable of variable
     | Literal of literal
     
-and literal = { lit : literalType; value: string}    
-    
-and callback = { name: identifier; args: expr list }
+and callback = { name: string; args: expr list }
 
-and variable =
-    { name: identifier; }
-    static member Default user =
-        { name = user; }
-
-// used for ParseAndVAlidate    
 type range =
     | Single of int64 // value
     | Lower of int64 // lower..
     | Upper of int64 // ..upper
     | Range of lower: int64 * upper: int64 // lower..upper
+    
+type scalarDeclaration = { name: string; t: scalarType } // x::<type>;
 
-// TODO I want ^ to be @, but that seems to cause issues with just reading in the actual dotnet command line (@ might be special?)
-// these are decls, but are assignments
-type rule =
-    // transients don't have general lvalue since it doesn't make sense for an array to be transient
-    // the array doesn't need persistent b/c that is handled in the arrdecls range
-    // you need it for scalars since we don't pre-declare those
-    | PersistentLValue of lvalue * rvalue // ^x/x/x[idx] := rvalue;
-    // Lets you just skip over it. Require a name though to make it clearer what you're parsing
-    | TransientLValue of parsingRvalue // _ := parsingRvalue;
+type arrayDeclaration =
+    | Stack of string * scalarType * int64 // x::<type>[<sz>];
+    | Heap of string * scalarType * expr// @x::<type>[<sz>];
     
-and lvalue =
-    | ScalarL of isAST: bool * identifier // x or ^x (may also be a syntax element)
-    | ArrL of identifier * expr // x[idx]
+type anyDeclaration =
+    | ScalarDeclaration of scalarDeclaration // x::<type>;
+    | ArrayDeclaration of arrayDeclaration //  x::<type>[<sz>];
+
+type lhs =
+    | ScalarLhs of identifier // a.b.c 
+    | ArrayLhs of identifier * expr // a.b.c[idx]
     
-// determines the type of the lvalue     
-and rvalue =
-    | ParsingRValue of parsingRvalue
-    | Expr of expr // a + b, lets you just assign to some arbitrary expr
-    
-and parsingRvalue =
+type rhs =
     | ParseBits of expr // [20] if lvalue is a storage, keep the value, otherwise just toss it
     | ParseBitsAndValidate of expr * rhs: range list // [20]{0..2,10} parse the value and then compare to the rhs possibilities
-    | ParseElement of identifier // <SyntaxGroup/template/constant> 
+    | ParseElement of string // <SyntaxGroup/constant> (can't actually have template when you are assignment, but can have it for transient)
+    | ParseLiteral of literal // <literal>
+    | ParseTemplate of string * expr list // <template(bindings...)>
+    | Expr of expr // a + b, lets you just assign to some arbitrary expr. doesn't parse anything
+
+type rule =
+    | ScalarDeclarationAssign of scalarDeclaration * option<rhs> // x::int8; x::syntaxType;
+    | ArrayDeclarationOnly of arrayDeclaration
+    | Assignment of lhs * rhs // x[idx] := rvalue; or x := rvalue;
+    | Transient of rhs // rvalue;
+    
+type binding =
+    | ArrayBinding of ref:bool * scalarType * string // arr::int8[] or &arr::int8[] (no diff btw heap/stack)
+    | ScalarBinding of ref:bool * scalarType * string // val::int8 or &val::int8
     
 type element =
     // syntax ident {
-    //   arrDecls { }
-    //   ...rules...
+    //   ast {
+    //     arrAst::int8[];
+    //     val::someSyntaxElem;
+    //     val2::float;
+    //   }
+    //   ...stmts...
     // }
-    | Syntax of string * arrDecl list * body: stmt
+    | Syntax of string * ast: anyDeclaration list * body: stmt
     // template ident(bindings...) {
-    //   arrDecls { ... }
-    //   ...rules...
+    //   ...stmts...
     // }
-    // cannot contain AST rules
-    | Template of string * bindings: binding list * arrDecl list * body: stmt
+    | Template of string * bindings: binding list * body: stmt
     // constant SOS := <literal>;
     | Constant of string * literal
-    
-and binding =
-    | ArrayBinding of ref:bool * string
-    | ScalarBinding of ref:bool * string
-    
+
 and stmt =
     | Rule of rule
     // for i in lower to upper { body }
-    | For of induc: identifier * lower: expr * upper: expr * body: stmt
+    | For of induc: string * lower: expr * upper: expr * body: stmt
     // if cond { } [else { }]
     | IfElse of cond: expr * tBody: stmt * fBody: option<stmt>
     // alternate { marker <marker> { } marker <marker> { } }
     | Alternate of (marker * stmt) list
     // just a list of stmts. not parsed individually
     | Suite of stmt list
+    // just an expression (used internally--this would be parsed as a rule in the frontend)
+    | ExprStmt of expr
     // push getBuffer() lower upper;
     | Push of buffer: expr * lower: expr * upper: expr
     // pop;
@@ -142,11 +149,7 @@ and stmt =
 // backtracks    
 and marker =
     | LiteralMarker of literal
-    | ConstantMarker of string // compiler checks that it is a constant!
-    
-and arrDecl =
-    | Stack of isAST: bool * string * scalarType * int64
-    | Heap of isAST: bool * string * scalarType
+    | ConstantMarker of string
     
 type program = Program of element list    
     
