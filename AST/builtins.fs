@@ -2,6 +2,8 @@ module AST.builtins
 
 open AST
 
+// TODO make sure to create separate names for things
+
 let bufferName = "buffer"
 let bufferVar = {name={levels=[bufferName]}}
 
@@ -48,6 +50,11 @@ let lookaheadBits nbits typeName = Callback({name=lookaheadBitsName; args=[Liter
 
 let skipBits nbits = Callback({name="skipBits"; args = [Variable(cursorVar);nbits]})
 
+let curBuffer() = Callback({name="curBuffer"; args = [Variable(bufferVar)]})
+let curCursor() = Callback({name="curCursor"; args = [Variable(bufferVar)]})
+let curStop() = Callback({name="curStop"; args = [Variable(bufferVar)]})
+
 let isInternal name =
     name = syntaxParseName || name = templateParseName || name = "exists" || name = "moreData"
             || name = "fatal" || name = parseBitsName || name = lookaheadBitsName || name = "skipBits"
+            || name = "curBuffer" || name = "curCursor" || name = "curStop" 

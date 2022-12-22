@@ -3,6 +3,7 @@ module AST.lower
 open System.Collections.Generic
 open System.Globalization
 open AST
+open AST.AST
 
 // [x]; => skipBits(x)
 type LowerTransientParseBits() =
@@ -354,6 +355,58 @@ type NaiveLowerAlternates() =
                 ifElse
             | _ -> base.visitStmt x
 
+// TODO check that push and pop exist within the same scope!            
+type LowerPushPop() =
+    inherit ASTVisitor.Rebuilder()
+    
+    let buffers = System.Collections.Generic.Stack<variable>()
+    let cursors = System.Collections.Generic.Stack<variable>()
+    let stops = System.Collections.Generic.Stack<variable>()
+    
+    static member pass x =
+        printfn "==Running pass LowerPushPop"
+        LowerPushPop().visitProgram x
+        
+    override this.visitStmt x =
+        match x with
+            | AST.Push(buff,cur,stop) ->
+                let buffPush = common.uniqueVar(Some("buffPush"))
+                let curPush = common.uniqueVar(Some("cursorPush"))
+                let stopPush = common.uniqueVar(Some("stopPush"))
+                // UGH I need a pure array type declaration that acts like a pointer
+                // or need to lower this later
+                // First, save the current state
+                let save =
+                       Suite([Rule(ScalarDeclarationAssign({name=sprintf "*%s" (buffPush.name.levels |> String.concat "");t=AST.Int8(false)}, Some(Expr(Variable(builtins.bufferVar)))))
+                              Rule(ScalarDeclarationAssign({name=sprintf "%s" (curPush.name.levels |> String.concat "");t=AST.Int8(false)}, Some(Expr(Variable(builtins.cursorVar)))))
+                              Rule(ScalarDeclarationAssign({name=sprintf "%s" (stopPush.name.levels |> String.concat "");t=AST.Int8(false)}, Some(Expr(Variable(builtins.stopVar)))))
+                       ])
+                // Now set to the user-specified ones
+                let update =
+                       Suite([
+                              Rule(Assignment(ScalarLhs(builtins.bufferVar.name), Expr(this.visitExpr buff)))
+                              Rule(Assignment(ScalarLhs(builtins.cursorVar.name), Expr(this.visitExpr cur)))
+                              Rule(Assignment(ScalarLhs(builtins.stopVar.name), Expr(this.visitExpr stop)))
+                       ])
+                // save these for the pop
+                buffers.Push buffPush
+                cursors.Push curPush
+                stops.Push stopPush                  
+                // and we're good to go
+                Suite([save;update])                       
+            | AST.Pop ->
+                // get the original things to reset
+                let buffPop = buffers.Pop()
+                let curPop = cursors.Pop()
+                let stopPop = stops.Pop()
+                // now reset the current state
+                Suite([
+                    Rule(Assignment(ScalarLhs(builtins.bufferVar.name), Expr(Variable(buffPop))))
+                    Rule(Assignment(ScalarLhs(builtins.cursorVar.name), Expr(Variable(curPop))))
+                    Rule(Assignment(ScalarLhs(builtins.stopVar.name), Expr(Variable(stopPop))))
+                ])
+            | _ -> base.visitStmt x
+
 // take any callbacks on the user's side that correspond to internal functions (like peek) and
 // lower them/add in appropriate arguments    
 type LowerUserCallbacks() =
@@ -386,6 +439,24 @@ type LowerUserCallbacks() =
             match builtins.moreData() with
                 | AST.Callback(c) -> c
                 | _ -> failwith ""
+        elif name = "curBuffer" then
+            if not (x.args.Length = 0) then
+                failwith (sprintf "Invalid number of args to callback \"curBuffer\". Expected 0, got %d." x.args.Length)
+            match builtins.curBuffer() with
+                | AST.Callback(c) -> c
+                | _ -> failwith ""
+        elif name = "curCursor" then
+            if not (x.args.Length = 0) then
+                failwith (sprintf "Invalid number of args to callback \"curCursor\". Expected 0, got %d." x.args.Length)
+            match builtins.curCursor() with
+                | AST.Callback(c) -> c
+                | _ -> failwith ""
+        elif name = "curStop" then
+            if not (x.args.Length = 0) then
+                failwith (sprintf "Invalid number of args to callback \"curStop\". Expected 0, got %d." x.args.Length)
+            match builtins.curBuffer() with
+                | AST.Callback(c) -> c
+                | _ -> failwith ""                   
         else
             // and if it's not any internal thing, wrap in a user temporary holder
             if builtins.isInternal name then

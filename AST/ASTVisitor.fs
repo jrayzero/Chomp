@@ -447,14 +447,14 @@ type Regenerate() =
             | Range(l,u) -> sprintf "%d..%d" l u
         
     member this.visitScalarDeclaration x =
-        sprintf "%s::%s" x.name (this.visitScalarType x.t)
+        sprintf "%s::%s" (this.visitScalarType x.t) x.name
         
     member this.visitArrayDeclaration x =
         match x with
             | Stack(name,t,sz) ->
-                sprintf "%s::%s[%d]" name (this.visitScalarType t) sz
+                sprintf "%s::%s[%d]" (this.visitScalarType t) name sz
             | Heap(name,t,sz) ->
-                sprintf "@%s::%s[%s]" name (this.visitScalarType t) (this.visitExpr sz)
+                sprintf "@%s::%s[%s]" (this.visitScalarType t) name (this.visitExpr sz)
         
     member this.visitAnyDeclaration x =
         match x with
@@ -494,13 +494,13 @@ type Regenerate() =
     member this.visitBinding x =
         match x with
             | ArrayBinding(ref,t,name) ->
-                let st = sprintf "%s::%s[]" name (this.visitScalarType t)
+                let st = sprintf "%s::%s[]" (this.visitScalarType t) name
                 if ref then
                     sprintf "&%s" st
                 else
                     st
             | ScalarBinding(ref,t,name) ->
-                let st = sprintf "%s::%s" name (this.visitScalarType t)
+                let st = sprintf "%s::%s" (this.visitScalarType t) name
                 if ref then
                    sprintf "&%s" st
                 else

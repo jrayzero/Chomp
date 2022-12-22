@@ -130,23 +130,23 @@ let rangeDU () =
     <|> rangeDU_Single()
 
 let scalarDeclarationExpr() =
-    singleIdentifierLevel() .>> spaces .>> skipString "::" .>> spaces .>>. scalarTypeDU() .>> spaces
+    scalarTypeDU() .>> spaces .>> skipString "::" .>> spaces .>>. singleIdentifierLevel() .>> spaces
     
 let scalarDeclarationRecord() =
-    singleIdentifierLevel() .>> spaces .>> skipString "::" .>> spaces .>>. scalarTypeDU() .>> commentSpaces()
-        .>> skipString ";" .>> commentSpaces() |>> fun (x,y) -> {name=x; t=y} 
+    scalarTypeDU() .>> spaces .>> skipString "::" .>> spaces .>>. singleIdentifierLevel() .>> commentSpaces()
+        .>> skipString ";" .>> commentSpaces() |>> fun (x,y) -> {name=y; t=x} 
 
 let arrayEmptyDeclarationExpr() =
-    singleIdentifierLevel() .>> spaces .>> skipString "::" .>> spaces .>>. scalarTypeDU() 
+    scalarTypeDU() .>> spaces .>> skipString "::" .>> spaces .>>. singleIdentifierLevel() 
         .>> skipString "[]" .>> spaces
 
 let arrayDeclarationDU() =
-    let heap = skipString "@" >>. singleIdentifierLevel() .>> spaces .>> skipString "::" .>>. scalarTypeDU() .>> spaces
+    let heap = skipString "@" >>. scalarTypeDU() .>> spaces .>> skipString "::" .>>. singleIdentifierLevel() .>> spaces
                .>> skipString "[" .>>. exprDU() .>> skipString "]" .>> commentSpaces() .>> skipString ";"
-                .>> commentSpaces() |>> fun ((a,b),c) -> Heap(a,b,c)
-    let stack = singleIdentifierLevel() .>> spaces .>> skipString "::" .>>. scalarTypeDU() .>> spaces
+                .>> commentSpaces() |>> fun ((a,b),c) -> Heap(b,a,c)
+    let stack = scalarTypeDU() .>> spaces .>> skipString "::" .>>. singleIdentifierLevel() .>> spaces
                .>> skipString "[" .>>. pint64 .>> skipString "]" .>> commentSpaces() .>> skipString ";"
-                .>> commentSpaces() |>> fun ((a,b),c) -> Stack(a,b,c)
+                .>> commentSpaces() |>> fun ((a,b),c) -> Stack(b,a,c)
     heap <|> stack                
 
 let anyDeclarationDU() =
@@ -184,7 +184,7 @@ let rhsDU() =
 
 let ruleDU_ScalarDeclarationAssign() =
     scalarDeclarationExpr() .>> spaces .>>. opt (skipString ":=" .>> commentSpaces() >>. rhsDU() .>> commentSpaces())
-        .>> skipString ";" .>> commentSpaces() |>> fun ((x,y),o) -> ScalarDeclarationAssign({name=x;t=y},o)
+        .>> skipString ";" .>> commentSpaces() |>> fun ((x,y),o) -> ScalarDeclarationAssign({name=y;t=x},o)
         
 let ruleDU_ArrayDeclarationOnly() =
     arrayDeclarationDU() |>> ArrayDeclarationOnly
@@ -268,9 +268,9 @@ let templateBinding() =
     let scalar = scalarDeclarationExpr() |>> fun (x,y) -> (false,x,y)
     
     let refVar = skipString "&" >>. (attempt array <|> scalar) |>> fun (a,b,c) ->
-                    if a then ArrayBinding(true,c,b) else ScalarBinding(true,c,b)
+                    if a then ArrayBinding(true,b,c) else ScalarBinding(true,b,c)
     let nonRefVar = ((attempt array) <|> scalar) |>> fun (a,b,c) ->
-                    if a then ArrayBinding(false,c,b) else ScalarBinding(false,c,b)                    
+                    if a then ArrayBinding(false,b,c) else ScalarBinding(false,b,c)                    
     refVar <|> nonRefVar
     
 let elementDU_Template() =
