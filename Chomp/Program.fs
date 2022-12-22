@@ -4,8 +4,6 @@ open AST.parser
 open AST.ASTVisitor
 open passes
 
-let testKeyword = "test"
-
 let enterParse (code: string list) =
     if code.Length = 0 then
         eprintfn "Expected code to parse!"
@@ -42,16 +40,16 @@ let checkAST (code: string list) =
         else
             eprintfn "ASTs do not match in file %s!" tmp
         0
-
+        
 [<EntryPoint>]
 let parseCommandLine args =
     printfn "%A" args
     match List.ofArray args with
-        | testKeyword::"checkAST"::[fname] ->
+        | "test"::"checkAST"::[fname] ->
             checkAST(List.ofSeq (System.IO.File.ReadLines(fname)))
-        | testKeyword::"parseFile"::[fname] ->
+        | "test"::"parseFile"::[fname] ->
             enterParse (List.ofSeq (System.IO.File.ReadLines(fname)))
-        | testKeyword::"parseInline"::code ->
+        | "test"::"parseInline"::code ->
             enterParse code
         | "codegen"::ifname::[ofname] ->
             codegenCPP (List.ofSeq (System.IO.File.ReadLines(ifname))) ofname

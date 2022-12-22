@@ -156,10 +156,10 @@ type LowerParseElementAndParseTemplate() =
     override this.visitRhs x =
         match x with
             | ParseElement(name) ->
-                Expr(builtins.syntaxParser name)
+                Expr(builtins.syntaxParse name)
             | ParseTemplate(name,bindings) ->
                 let xbindings = bindings |> List.map this.visitExpr
-                Expr(builtins.templateParser name xbindings)
+                Expr(builtins.templateParse name xbindings)
             | _ -> base.visitRhs x
 
 // transient parsebits should be gone already
@@ -192,19 +192,21 @@ type LowerParseAssignments() =
                 let nbits = this.visitExpr ex
                 let cond = Not(builtins.exists nbits)
                 let enough = IfElse(cond, Suite([ExprStmt(failNbits)]), None)
-                let parseBits = Callback({name="parseBits"
-                                          args=[Variable(builtins.bufferVar)
-                                                Variable(builtins.cursorVar)
-                                                nbits]})
+                let parseBits = builtins.parseBits nbits "int64"
+                // let parseBits = Callback({name="parseBits"
+                                          // args=[Variable(builtins.bufferVar)
+                                                // Variable(builtins.cursorVar)
+                                                // nbits]})
                 Some((enough,Expr(parseBits)))
             | ParseBitsAndValidate(ex, ranges) ->
                 let nbits = this.visitExpr ex
                 let cond = Not(builtins.exists nbits)
                 let enough = IfElse(cond, Suite([ExprStmt(failNbits)]), None)
-                let parseBits = Callback({name="parseBits"
-                                          args=[Variable(builtins.bufferVar)
-                                                Variable(builtins.cursorVar)
-                                                nbits]})
+                let parseBits = builtins.parseBits nbits "int64"
+                // let parseBits = Callback({name="parseBits"
+                                          // args=[Variable(builtins.bufferVar)
+                                                // Variable(builtins.cursorVar)
+                                                // nbits]})
                 // assign to a temporaryId
                 let tmpVar = common.uniqueVar (Some("tmpParse"))
                 let parsed = Rule(ScalarDeclarationAssign({name=tmpVar.name.levels[0];t=Int64(true)},
@@ -302,20 +304,20 @@ type NaiveLowerAlternates() =
                                     | Binary -> common.binaryStringToDec lit.value, lit.value.Length
                                     | Ascii -> common.asciiStringToDec lit.value, lit.value.Length * 8
                             | _ -> failwith "Constant markers should be lowered to literal!"
-                    let lookahead = builtins.lookaheadBits (Literal({lit=Decimal; value=sprintf "%d" nbits}))
+                    let lookahead = builtins.lookaheadBits (Literal({lit=Decimal; value=sprintf "%d" nbits})) "int64"
                     (lookahead, value, Literal({lit=Decimal;value=sprintf "%d" nbits}), body)
                     )
                 let mutable ifElse = Suite([])
                 for i in items.Length-1..-1..0 do
                     let lk,lit,nbits,body = items[i]
-                    let cond = And([builtins.exists(nbits);lk])
+                    let cond = And([builtins.exists(nbits); Equals(true, [lk;Literal({lit=Decimal;value=sprintf "%d" lit})])])
                     if i = items.Length - 1 then
                         // innermost
-                        ifElse <- IfElse(Equals(true, [cond;Literal({lit=Decimal;value=sprintf "%d" lit})]),
+                        ifElse <- IfElse(cond,
                                         Suite([ExprStmt(builtins.skipBits nbits);body]),
                                         Some(ExprStmt(builtins.fatal "Alternate failed")))
                     else
-                        ifElse <- IfElse(Equals(true, [cond;Literal({lit=Decimal;value=sprintf "%d" lit})]),
+                        ifElse <- IfElse(cond,
                                         Suite([ExprStmt(builtins.skipBits nbits);body]), Some(ifElse))                        
                     
                 ifElse

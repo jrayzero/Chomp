@@ -26,5 +26,6 @@ let runPasses program =
             printfn "%A" prog2
             prog2
         )
+    |> codegen.LowerFunctions.pass 
     |> codegen.CodegenCPP.pass
     |> (fun c -> printfn "%s" c; c)

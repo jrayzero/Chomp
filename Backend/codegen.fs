@@ -3,6 +3,27 @@ module Backend.codegen
 open AST
 open imperativeIR
 
+// take built-in functions and make them match the runtime signature
+// (like adding templates and whatnot)
+type LowerFunctions() =
+    inherit Rebuilder()
+    
+    static member pass x =
+        printfn "==Running pass LowerFunctions"
+        LowerFunctions().visitProgram x    
+    
+    override this.visitCallback x =
+        let name = x.name
+        if name = builtins.syntaxParseName || name = builtins.templateParseName ||
+            name = builtins.lookaheadBitsName || name = builtins.parseBitsName then
+            let dummy = match x.args[0] with | AST.Literal(lit) -> lit.value | _ -> failwith ""
+            let newName = sprintf "%s<%s>" name
+                              (if name = builtins.lookaheadBitsName ||
+                                  name = builtins.parseBitsName then sprintf "%s_t" dummy else dummy)
+            {name=newName; args=x.args[1..]}
+        else
+            x
+        
 type CodegenCPP() =
     
     let mutable ind = 0
@@ -161,14 +182,14 @@ type CodegenCPP() =
                 let fields = ast |> List.map this.visitDeclaration |> List.map (fun s -> indent(sprintf "%s;\n" s))
                             |> String.concat ""
                 let templateDecl = indent("template <typename USER>\n")                                                
-                let bodyDecl = indent(sprintf "void innerParse(USER &user, uint8_t %s, uint64_t %s, uint64_t %s) {\n"
+                let bodyDecl = indent(sprintf "void innerParse(USER &user, uint8_t *%s, uint64_t &%s, uint64_t &%s) {\n"
                                           builtins.bufferName builtins.cursorName builtins.stopName)
                 let bodyFooter = indent("}\n")
                 incr()
                 let sbody = this.visitStmt body                                   
                 decr()
                 let templateStaticDecl = indent("template <typename USER>\n")
-                let staticBodyDecl = indent(sprintf "static %s parse(USER &user, uint8_t %s, uint64_t %s, uint64_t %s) {\n"
+                let staticBodyDecl = indent(sprintf "static %s parse(USER &user, uint8_t *%s, uint64_t &%s, uint64_t &%s) {\n"
                                           name builtins.bufferName builtins.cursorName builtins.stopName)
                 let staticBodyFooter = indent("}\n")                
                 incr()
@@ -186,7 +207,7 @@ type CodegenCPP() =
                 incr()
                 // I'm punting type stuff right now, so this just gets template for the binding types!
                 let templateDecl = indent(sprintf "template <typename USER>\n")                    
-                let bodyDecl = indent(sprintf "static void parse(USER &user, uint8_t %s, uint64_t %s, uint64_t %s, %s) {\n"
+                let bodyDecl = indent(sprintf "static void parse(USER &user, uint8_t *%s, uint64_t &%s, uint64_t &%s, %s) {\n"
                                           builtins.bufferName builtins.cursorName builtins.stopName bindings)
                 let bodyFooter = indent("}\n")
                 incr()
