@@ -14,6 +14,15 @@ let enterParse (code: string list) =
         parseIt (code |> String.concat "\n") |> fun (x,_) -> runPasses x |> ignore
         0
         
+let codegenCPP (code: string list) ofn =
+    if code.Length = 0 then
+        eprintfn "Expected code to parse!"
+        1
+    else
+        let code = parseIt (code |> String.concat "\n") |> fun (x,_) -> runPasses x
+        System.IO.File.WriteAllText(ofn, code)
+        0    
+        
 let checkAST (code: string list) =
     if code.Length = 0 then
         eprintfn "Expected code to parse!"
@@ -44,6 +53,8 @@ let parseCommandLine args =
             enterParse (List.ofSeq (System.IO.File.ReadLines(fname)))
         | testKeyword::"parseInline"::code ->
             enterParse code
+        | "codegen"::ifname::[ofname] ->
+            codegenCPP (List.ofSeq (System.IO.File.ReadLines(ifname))) ofname
         | _ ->
             eprintfn "Unknown command: %s" (args |> String.concat " ")
             0

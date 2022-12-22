@@ -8,17 +8,16 @@ let bufferVar = {name={levels=[bufferName]}}
 let cursorName = "cursor"
 let cursorVar = {name={levels=[cursorName]}}
 
-let syntaxFactory name = Callback({name="syntax_factory"; args=[Literal({lit=Ascii; value=name})]})
-let syntaxParser factory = Callback({name="syntax_parse"; args=[factory]})
-let syntaxParserFactory name = syntaxParser (syntaxFactory name)
+let stopName = "stop"
+let stopVar = {name={levels=[stopName]}}
 
-let templateFactory name bindings =
+let syntaxParser name = Callback({name="syntax_parse"; args=[Literal({lit=Ascii; value=name})]})
+
+let templateParser name bindings =
     let args = Literal({lit=Ascii; value=name}) :: bindings
-    Callback({name="template_factory"; args=args})
-let templateParser factory = Callback({name="template_parse"; args=[factory]})
-let templateParserFactory name bindings = templateParser (templateFactory name bindings)
+    Callback({name="template_parse"; args=args})
 
-let exists nbits = Callback({name="exists"; args=[Variable(bufferVar);Variable(cursorVar);nbits]})
+let exists nbits = Callback({name="exists"; args=[Variable(cursorVar);Variable(stopVar);nbits]})
 
 let fatal msg = Callback({name="fatal"; args=[Literal({lit=Ascii; value=msg})]})
 
@@ -30,4 +29,4 @@ let parseBits nbits = Callback({name=parseBitsName; args=[Variable(bufferVar);Va
 let lookaheadBitsName = "lookaheadBits"
 let lookaheadBits nbits = Callback({name=lookaheadBitsName; args=[Variable(bufferVar);Variable(cursorVar);nbits]})
 
-let skipBits nbits = Callback({name="skipBits"; args = [nbits]})
+let skipBits nbits = Callback({name="skipBits"; args = [Variable(cursorVar);nbits]})

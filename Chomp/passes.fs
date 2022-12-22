@@ -25,4 +25,6 @@ let runPasses program =
             let prog2 = imperativeIR.ASTToImperativeIR.pass y
             printfn "%A" prog2
             prog2
-        )   
+        )
+    |> codegen.CodegenCPP.pass
+    |> (fun c -> printfn "%s" c; c)

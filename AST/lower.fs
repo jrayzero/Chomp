@@ -144,8 +144,8 @@ type LowerParseLiteral() =
             | _ -> base.visitRhs x
 
 // constants must already be lowered
-// <syntax> => parse_syntax(syntax_factory(syntaxName))
-// <template(...)> => parse_template(template_factory(templateName, ...))
+// <syntax> => parse_syntax(syntaxName)
+// <template(...)> => parse_template(templateName, ...)
 type LowerParseElementAndParseTemplate() =
     inherit ASTVisitor.Rebuilder()
         
@@ -156,10 +156,10 @@ type LowerParseElementAndParseTemplate() =
     override this.visitRhs x =
         match x with
             | ParseElement(name) ->
-                Expr(builtins.syntaxParserFactory name)
+                Expr(builtins.syntaxParser name)
             | ParseTemplate(name,bindings) ->
                 let xbindings = bindings |> List.map this.visitExpr
-                Expr(builtins.templateParserFactory name xbindings)
+                Expr(builtins.templateParser name xbindings)
             | _ -> base.visitRhs x
 
 // transient parsebits should be gone already
@@ -272,11 +272,11 @@ type LowerParseAssignments() =
 //   marker <lit2> { B; }
 // }
 // =>
-// if lookaheadBits(nbits) = lit {
+// if exists(cursor, stop, nbits) &&  lookaheadBits(nbits) = lit {
 //    A;
 //    skipBits(nbits)
 // } else {
-//    if lookaheadBits(nbits2) = lit2 { B; skipBits(nbit2); }
+//    if exists(cursor, stop, nbits) &&  lookaheadBits(nbits2) = lit2 { B; skipBits(nbit2); }
 //    else { fatal "Alternate failed"; }  
 // }
 type NaiveLowerAlternates() =
@@ -308,13 +308,14 @@ type NaiveLowerAlternates() =
                 let mutable ifElse = Suite([])
                 for i in items.Length-1..-1..0 do
                     let lk,lit,nbits,body = items[i]
+                    let cond = And([builtins.exists(nbits);lk])
                     if i = items.Length - 1 then
                         // innermost
-                        ifElse <- IfElse(Equals(true, [lk;Literal({lit=Decimal;value=sprintf "%d" lit})]),
+                        ifElse <- IfElse(Equals(true, [cond;Literal({lit=Decimal;value=sprintf "%d" lit})]),
                                         Suite([ExprStmt(builtins.skipBits nbits);body]),
                                         Some(ExprStmt(builtins.fatal "Alternate failed")))
                     else
-                        ifElse <- IfElse(Equals(true, [lk;Literal({lit=Decimal;value=sprintf "%d" lit})]),
+                        ifElse <- IfElse(Equals(true, [cond;Literal({lit=Decimal;value=sprintf "%d" lit})]),
                                         Suite([ExprStmt(builtins.skipBits nbits);body]), Some(ifElse))                        
                     
                 ifElse

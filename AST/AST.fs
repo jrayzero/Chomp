@@ -10,8 +10,6 @@ module AST.AST
 // bits are parsed from msb to lsb, which is the most common
 // we handle the bit packing for you
 
-// TODO use unique pointers for holding the nested structures
-
 type scalarType =
     | Int8 of signed:bool
     | Int16 of signed:bool
