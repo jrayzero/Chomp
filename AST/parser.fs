@@ -210,6 +210,12 @@ let stmtDU_For() =
     let loop = induction .>>. range .>>. body .>> commentSpaces()
     loop |>> fun ((induc,(lower,upper)),body) -> For(induc,lower,upper,body)
     
+let stmtDU_While() =
+    let cond = skipString "while" >>. spaces1 >>. exprDU() .>> spaces
+    let body = betweenType "{" "}" (many (commentSpaces() >>. stmtParser) |>> Suite)
+    let loop = cond .>>. body .>> commentSpaces()
+    loop |>> While
+    
 let stmtDU_If() =
     let ifPart = skipString "if" >>. spaces1 >>. exprDU() .>>. betweenType "{" "}" (many (commentSpaces() >>. stmtParser))
     let elsePart = opt (spaces >>. skipString "else" >>. commentSpaces() >>. betweenType "{" "}" (many (commentSpaces() >>. stmtParser)))
@@ -241,7 +247,7 @@ let stmtDU_Push() =
 let stmtDU_Pop() = skipString "pop" .>> spaces .>> skipString ";" .>> commentSpaces()  |>> fun _ -> Pop
 
 let stmtDU() =
-    let p = stmtDU_For() <|> stmtDU_If() <|> stmtDU_Alternate() <|> stmtDU_Push() <|> stmtDU_Pop() <|> stmtDU_Rule()
+    let p = stmtDU_For() <|> stmtDU_While() <|> stmtDU_If() <|> stmtDU_Alternate() <|> stmtDU_Push() <|> stmtDU_Pop() <|> stmtDU_Rule()
     stmtRef := p
     p
     

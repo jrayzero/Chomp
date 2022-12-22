@@ -21,6 +21,8 @@ let runPasses program =
     |> runASTPass lower.LowerParseElementAndParseTemplate.pass true
     |> runASTPass lower.LowerParseAssignments.pass true
     |> runASTPass lower.NaiveLowerAlternates.pass true
+    |> runASTPass lower.LowerLiterals.pass true
+    |> runASTPass lower.LowerUserCallbacks.pass true
     |> fun y -> (
             let prog2 = imperativeIR.ASTToImperativeIR.pass y
             printfn "%A" prog2

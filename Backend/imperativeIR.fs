@@ -11,6 +11,7 @@ type declaration =
 
 type stmt =
     | For of induc: string * lower: AST.expr * upper: AST.expr * stride: AST.expr * body: stmt
+    | While of cond : AST.expr * body : stmt
     | IfElse of cond: AST.expr * tBody: stmt * fBody: option<stmt>
     | Suite of stmt list
     | ExprStmt of AST.expr
@@ -123,10 +124,13 @@ type ConstVisitor() =
                 
     default this.visitStmt x =
         match x with
-            | For(induc,lower,upper,stride,body) ->
+            | For(_,lower,upper,stride,body) ->
                 this.visitExpr lower
                 this.visitExpr upper
                 this.visitExpr stride
+                this.visitStmt body
+            | While(cond, body) ->
+                this.visitExpr cond
                 this.visitStmt body
             | IfElse(cond, tBody, fBody) ->
                 this.visitExpr cond
@@ -280,6 +284,10 @@ type Rebuilder() =
                     this.visitExpr stride,
                     this.visitStmt body
                     )
+            | While(cond,body) ->
+                While(
+                    this.visitExpr cond,
+                    this.visitStmt body)
             | IfElse(cond, tBody, fBody) ->
                 IfElse(
                     this.visitExpr cond,
@@ -373,6 +381,7 @@ type ASTToImperativeIR() =
         match x with
             | AST.Rule r -> this.visitRule r
             | AST.For(a,b,c,d) -> For(a,this.visitExpr b, this.visitExpr c, AST.Literal({lit=AST.Decimal;value="1"}), this.visitStmt d)
+            | AST.While(cond,body) -> While(cond, this.visitStmt body)
             | AST.IfElse(a,b,c) ->
                 let f =
                     match c with

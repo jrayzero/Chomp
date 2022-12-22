@@ -28,6 +28,8 @@ let templateParse name bindings =
 
 let exists nbits = Callback({name="exists"; args=[Variable(cursorVar);Variable(stopVar);nbits]})
 
+let moreData() = Callback({name="moreData"; args=[Variable(cursorVar);Variable(stopVar)]})
+
 let fatal msg = Callback({name="fatal"; args=[Literal({lit=Ascii; value=msg})]})
 
 // placeholder for a parsing routine on the buffer
@@ -45,3 +47,7 @@ let lookaheadBits nbits typeName = Callback({name=lookaheadBitsName; args=[Liter
                                                                            nbits]})
 
 let skipBits nbits = Callback({name="skipBits"; args = [Variable(cursorVar);nbits]})
+
+let isInternal name =
+    name = syntaxParseName || name = templateParseName || name = "exists" || name = "moreData"
+            || name = "fatal" || name = parseBitsName || name = lookaheadBitsName || name = "skipBits"

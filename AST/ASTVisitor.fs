@@ -138,9 +138,12 @@ type ConstVisitor() =
     default this.visitStmt x =
         match x with
             | Rule(rule) -> this.visitRule rule
-            | For(induc,lower,upper,body) ->
+            | For(_,lower,upper,body) ->
                 this.visitExpr lower
                 this.visitExpr upper
+                this.visitStmt body
+            | While(cond,body) ->
+                this.visitExpr cond
                 this.visitStmt body
             | IfElse(cond, tBody, fBody) ->
                 this.visitExpr cond
@@ -332,6 +335,11 @@ type Rebuilder() =
                     induc,
                     this.visitExpr lower,
                     this.visitExpr upper,
+                    this.visitStmt body
+                    )
+            | While(cond, body) ->
+                While(
+                    this.visitExpr cond,
                     this.visitStmt body
                     )
             | IfElse(cond, tBody, fBody) ->
@@ -533,6 +541,13 @@ type Regenerate() =
                 decr()
                 let forFooter = indent("}")
                 indent(sprintf "for %s in %s to %s {\n%s%s\n" induc l u sbody forFooter)
+            | While(cond, body) ->
+                let c = this.visitExpr cond
+                incr()
+                let sbody = this.visitStmt body
+                decr()
+                let footer = indent("}")
+                indent(sprintf "while %s {\n%s%s\n" c sbody footer)
             | IfElse(cond,tBody,fBody) ->
                 let scond = this.visitExpr cond
                 incr()

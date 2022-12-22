@@ -265,7 +265,38 @@ type LowerParseAssignments() =
                             | None ->
                                 Rule(Transient(this.visitRhs r))
                     | _ -> base.visitStmt x
-            | _ -> base.visitStmt x    
+            | _ -> base.visitStmt x
+            
+// just lower to decimals
+type LowerLiterals() =
+    inherit ASTVisitor.Rebuilder()
+    
+    static member pass x =
+        printfn "==Running pass LowerLiterals"
+        LowerLiterals().visitProgram x
+    
+    override this.visitLiteral x =
+        // let nbits =
+        //     match x.lit with
+        //         | Hex -> x.value.Length * 4
+        //         | Decimal -> 64
+        //         | Binary -> x.value.Length
+        //         | Ascii -> x.value.Length * 8
+        // now convert to a decimal value
+        match x.lit with
+            | Hex ->
+                if x.value.Length * 3 > 64 then
+                    failwith (sprintf "Parsed hex value 0x%s does not fit in 64-bit integer" x.value)
+                {lit=AST.Decimal; value=sprintf "%d" (System.Int64.Parse(x.value, NumberStyles.HexNumber))}
+            | Decimal ->
+                x
+            | Binary ->
+                if x.value.Length > 64 then
+                    failwith (sprintf "Parsed binary value 0b%s does not fit in 64-bit integer" x.value)
+                {lit=AST.Decimal; value=sprintf "%d" (common.binaryStringToDec x.value)}
+            | Ascii ->
+                x
+    
 
 // just to get something going
 // should be all literal markers at this point
@@ -322,4 +353,42 @@ type NaiveLowerAlternates() =
                     
                 ifElse
             | _ -> base.visitStmt x
+
+// take any callbacks on the user's side that correspond to internal functions (like peek) and
+// lower them/add in appropriate arguments    
+type LowerUserCallbacks() =
+    inherit ASTVisitor.Rebuilder()
     
+    static member pass x =
+        printfn "==Running pass LowerUserCallbacks"
+        LowerUserCallbacks().visitProgram x    
+    
+    override this.visitCallback x =
+        let x = base.visitCallback x
+        let name = x.name
+        if name = "peek" then
+            if not (x.args.Length = 1) then
+                failwith (sprintf "Invalid number of args to callback \"peek\". Expected 1, got %d." x.args.Length)
+            match (builtins.lookaheadBits x.args[0] "int64") with
+                | AST.Callback(c) -> c
+                | _ -> failwith ""
+        elif name = "exists" then
+            // this may have been inserted by us, check the number of args
+            if x.args.Length = 1 then
+                match (builtins.exists x.args[0]) with
+                    | AST.Callback(c) -> c
+                    | _ -> failwith ""
+            else
+                x // inserted by us in the compiler
+        elif name = "moreData" then
+            if not (x.args.Length = 0) then
+                failwith (sprintf "Invalid number of args to callback \"moreData\". Expected 0, got %d." x.args.Length)
+            match builtins.moreData() with
+                | AST.Callback(c) -> c
+                | _ -> failwith ""
+        else
+            // and if it's not any internal thing, wrap in a user temporary holder
+            if builtins.isInternal name then
+                x
+            else
+                {name="USER"; args=[Callback(x)]}

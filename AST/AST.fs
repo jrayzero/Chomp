@@ -131,6 +131,8 @@ and stmt =
     | Rule of rule
     // for i in lower to upper { body }
     | For of induc: string * lower: expr * upper: expr * body: stmt
+    // while cond { body }
+    | While of cond: expr * body: stmt
     // if cond { } [else { }]
     | IfElse of cond: expr * tBody: stmt * fBody: option<stmt>
     // alternate { marker <marker> { } marker <marker> { } }

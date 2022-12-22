@@ -12,6 +12,11 @@ bool exists(uint64_t cursor, uint64_t stop, int nbits) {
   return cursor + nbits < stop;
 }
 
+template <int Dummy=0>
+bool moreData(uint64_t cursor, uint64_t stop) {
+  return cursor < stop;
+}
+
 template <typename T>
 T lookaheadBits(const uint8_t *buffer, uint64_t cursor, int nbits) {
   T val = 0;

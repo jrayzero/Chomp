@@ -21,6 +21,13 @@ type LowerFunctions() =
                               (if name = builtins.lookaheadBitsName ||
                                   name = builtins.parseBitsName then sprintf "%s_t" dummy else dummy)
             {name=newName; args=x.args[1..]}
+        elif name = "USER" then
+            let arg =
+                match x.args[0] with
+                    | AST.Callback(c) -> c
+                    | _ -> failwith ""
+            let name = sprintf "user.%s" arg.name
+            {name=name; args = arg.args}
         else
             x
         
@@ -120,6 +127,13 @@ type CodegenCPP() =
                 let forFooter = indent("}")
                 indent(sprintf "for (int64_t %s = %s; %s < %s; %s+=%s) {\n%s%s\n"
                            induc l induc u induc st sbody forFooter)
+            | While(cond, body) ->
+                let scond = this.visitExpr cond
+                incr()
+                let sbody = this.visitStmt body
+                decr()
+                let footer = indent("}")
+                indent(sprintf "while (%s) {\n%s%s\n" scond sbody footer) 
             | IfElse(cond,tBody,fBody) ->
                 let scond = this.visitExpr cond
                 incr()
@@ -200,7 +214,6 @@ type CodegenCPP() =
                 let staticPart = sprintf "%s%s%s%s" templateStaticDecl staticBodyDecl staticBody staticBodyFooter
                 sprintf "%s%s%s%s%s%s%s%s" header fields staticPart templateDecl bodyDecl sbody bodyFooter footer
             | Template(name, bindings, body) ->
-                let bsz = bindings.Length
                 let header = indent(sprintf "struct %s {\n" name)
                 let footer = indent("};\n")
                 let bindings = bindings |> List.map this.visitBinding |> String.concat "," 
