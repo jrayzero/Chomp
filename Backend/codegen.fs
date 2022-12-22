@@ -30,10 +30,12 @@ type LowerFunctions() =
             {name=name; args = arg.args}
         else
             x
-        
+            
 type CodegenCPP() =
     
     let mutable ind = 0
+    
+    let types = System.Collections.Generic.HashSet<string>()
     
     let incr() = ind <- ind + 2
     let decr() = ind <- ind - 2
@@ -47,7 +49,7 @@ type CodegenCPP() =
     static member pass x =
         printfn "==Running pass CodegenCPP"
         CodegenCPP().visitProgram x
-    
+        
     member this.visitScalarType x =
         match x with
             | AST.Int8(b) -> if b then "int8_t" else "uint8_t"
@@ -190,6 +192,7 @@ type CodegenCPP() =
     member this.visitElement x =
         match x with
             | Syntax(name, ast, body) ->
+                types.Add(name) |> ignore
                 let header = indent(sprintf "struct %s {\n" name)
                 let footer = indent("};\n")
                 incr()
@@ -214,6 +217,7 @@ type CodegenCPP() =
                 let staticPart = sprintf "%s%s%s%s" templateStaticDecl staticBodyDecl staticBody staticBodyFooter
                 sprintf "%s%s%s%s%s%s%s%s" header fields staticPart templateDecl bodyDecl sbody bodyFooter footer
             | Template(name, bindings, body) ->
+                types.Add(name) |> ignore
                 let header = indent(sprintf "struct %s {\n" name)
                 let footer = indent("};\n")
                 let bindings = bindings |> List.map this.visitBinding |> String.concat "," 
@@ -231,8 +235,12 @@ type CodegenCPP() =
             | Dummy -> ""
             
     member this.visitProgram x =
-        let header = "// -*-c++-*-\n\
-                      #include <vector>\n\
-                      #include \"runtime/cpp/runtime.h\"\n"
         let src = match x with Program(p) -> p |> List.map this.visitElement |> String.concat "\n"
-        sprintf "%s %s" header src
+        let mutable fwds = ""
+        for t in types do
+            fwds <- sprintf "%s\nstruct %s;" fwds t
+        let header = sprintf "// -*-c++-*-\n\
+                      #include <vector>\n\
+                      #include \"runtime/cpp/runtime.h\"\n\
+                      %s\n" fwds        
+        sprintf "%s%s" header src

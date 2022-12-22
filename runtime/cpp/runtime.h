@@ -7,6 +7,15 @@ void skipBits(uint64_t &cursor, int nbits) {
   cursor += nbits;
 }
 
+// https://stackoverflow.com/questions/38353823/identity-function-with-perfect-forwarding
+template<typename..., typename V>
+constexpr V&& identity(V&& v) {
+  return std::forward<V>(v);
+}
+
+template <typename T>
+void free(T *data) { delete[] data; }
+
 template <int Dummy=0>
 bool exists(uint64_t cursor, uint64_t stop, int nbits) {
   return cursor + nbits < stop;

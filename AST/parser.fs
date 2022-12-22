@@ -241,8 +241,8 @@ let stmtDU_Alternate() =
     skipString "alternate" >>. spaces1 >>. betweenType "{" "}" (many1 (markerBody())) |>> Alternate
             
 let stmtDU_Push() =
-    skipString "push" >>. spaces1 >>. exprDU() .>>. exprDU() .>>. exprDU() .>> spaces .>> skipString ";" .>> commentSpaces() 
-        |>> fun ((buff,lower),upper) -> Push(buff,lower,upper)
+    skipString "push" >>. spaces1 >>. exprDU() .>>. exprDU() .>>. exprDU() .>> spaces .>> skipString ";" .>> commentSpaces()
+            |>> fun ((buff,lower),upper) -> Push(buff,lower,upper)
 
 let stmtDU_Pop() = skipString "pop" .>> spaces .>> skipString ";" .>> commentSpaces()  |>> fun _ -> Pop
 

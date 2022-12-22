@@ -378,8 +378,8 @@ type LowerPushPop() =
                 // First, save the current state
                 let save =
                        Suite([Rule(ScalarDeclarationAssign({name=sprintf "*%s" (buffPush.name.levels |> String.concat "");t=AST.Int8(false)}, Some(Expr(Variable(builtins.bufferVar)))))
-                              Rule(ScalarDeclarationAssign({name=sprintf "%s" (curPush.name.levels |> String.concat "");t=AST.Int8(false)}, Some(Expr(Variable(builtins.cursorVar)))))
-                              Rule(ScalarDeclarationAssign({name=sprintf "%s" (stopPush.name.levels |> String.concat "");t=AST.Int8(false)}, Some(Expr(Variable(builtins.stopVar)))))
+                              Rule(ScalarDeclarationAssign({name=sprintf "%s" (curPush.name.levels |> String.concat "");t=AST.Int64(false)}, Some(Expr(Variable(builtins.cursorVar)))))
+                              Rule(ScalarDeclarationAssign({name=sprintf "%s" (stopPush.name.levels |> String.concat "");t=AST.Int64(false)}, Some(Expr(Variable(builtins.stopVar)))))
                        ])
                 // Now set to the user-specified ones
                 let update =
@@ -454,9 +454,15 @@ type LowerUserCallbacks() =
         elif name = "curStop" then
             if not (x.args.Length = 0) then
                 failwith (sprintf "Invalid number of args to callback \"curStop\". Expected 0, got %d." x.args.Length)
-            match builtins.curBuffer() with
+            match builtins.curStop() with
                 | AST.Callback(c) -> c
-                | _ -> failwith ""                   
+                | _ -> failwith ""
+        elif name = "free" then
+            if not (x.args.Length = 1) then
+                failwith (sprintf "Invalid number of args to callback \"free\". Expected 1, got %d." x.args.Length)
+            match (builtins.free (x.args[0])) with
+                | AST.Callback(c) -> c
+                | _ -> failwith ""            
         else
             // and if it's not any internal thing, wrap in a user temporary holder
             if builtins.isInternal name then
