@@ -426,7 +426,7 @@ type Regenerate() =
             | GreaterThan(eq,l,r) ->
                 sprintf "(%s) >%s (%s)" (this.visitExpr l) (if eq then "=" else "") (this.visitExpr r)
             | LessThan(eq,l,r) ->
-                sprintf "(%s) %s (%s)" (this.visitExpr l) (if eq then "=" else "") (this.visitExpr r)
+                sprintf "(%s) <%s (%s)" (this.visitExpr l) (if eq then "=" else "") (this.visitExpr r)
             | Equals(eq,exs) ->
                 exs |> List.map this.visitExpr |> List.map (fun s -> sprintf "(%s)" s) |> String.concat (if eq then " == " else " != ")
             | BAnd(exs) -> exs |> List.map this.visitExpr |> List.map (fun s -> sprintf "(%s)" s) |> String.concat " & "

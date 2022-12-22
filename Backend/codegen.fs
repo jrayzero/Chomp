@@ -90,7 +90,7 @@ type CodegenCPP() =
             | AST.GreaterThan(eq,l,r) ->
                 sprintf "(%s) >%s (%s)" (this.visitExpr l) (if eq then "=" else "") (this.visitExpr r)
             | AST.LessThan(eq,l,r) ->
-                sprintf "(%s) %s (%s)" (this.visitExpr l) (if eq then "=" else "") (this.visitExpr r)
+                sprintf "(%s) <%s (%s)" (this.visitExpr l) (if eq then "=" else "") (this.visitExpr r)
             | AST.Equals(eq,exs) ->
                 exs |> List.map this.visitExpr |> List.map (sprintf "(%s)") |> String.concat (if eq then " == " else " != ")
             | AST.BAnd(exs) -> exs |> List.map this.visitExpr |> List.map (sprintf "(%s)") |> String.concat " & "

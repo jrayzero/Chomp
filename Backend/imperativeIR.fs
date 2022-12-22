@@ -213,7 +213,7 @@ type Rebuilder() =
                     this.visitExpr r
                )
             | AST.LessThan(eq,l,r) ->
-               AST.GreaterThan(
+               AST.LessThan(
                    eq,
                    this.visitExpr l,
                    this.visitExpr r
