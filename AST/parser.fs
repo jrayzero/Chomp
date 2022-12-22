@@ -1,7 +1,7 @@
-module Chomp.parser
+module AST.parser
 
-open Chomp.AST
 open FParsec
+open AST
 
 // TODO there are some egregious uses of backtracking, as well as spaces
 

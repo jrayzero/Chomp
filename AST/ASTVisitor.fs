@@ -1,7 +1,6 @@
-module Chomp.ASTVisitor
+module AST.ASTVisitor
 
 open AST
-open Chomp.AST
 
 type ConstVisitor() =
     

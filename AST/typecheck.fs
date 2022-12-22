@@ -1,9 +1,8 @@
-module Chomp.typecheck
+module AST.typecheck
 
 // TODO check that nested fields exist (and that they are scalar/array)
 // TODO check that the appropriate types of fields are passed into a called template
-
-open Chomp.AST
+open AST
 open System.Collections.Generic
 
 type TypeCheck() =

@@ -1,4 +1,4 @@
-module Chomp.AST
+module AST.AST
 
 // Scoping:
 // All variables are element-scoped (i.e. within Template or Syntax). This emans we can pre-gather all the variables.

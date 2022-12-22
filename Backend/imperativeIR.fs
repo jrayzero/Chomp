@@ -1,4 +1,6 @@
-module Chomp.imperativeIR
+module Backend.imperativeIR
+
+open AST
 
 // IR suitable for codegen
 // utilizes some of the components from the AST 

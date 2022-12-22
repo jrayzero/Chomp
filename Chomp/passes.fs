@@ -1,5 +1,8 @@
 module Chomp.passes
 
+open AST
+open Backend
+
 let runUnitPass pass program =
     pass program
     program

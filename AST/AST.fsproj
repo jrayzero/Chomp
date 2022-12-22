@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net7.0</TargetFramework>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Compile Include="AST.fs" />
+        <Compile Include="ASTVisitor.fs" />
+        <Compile Include="parser.fs" />
+        <Compile Include="builtins.fs" />
+        <Compile Include="common.fs" />
+        <Compile Include="typecheck.fs" />
+        <Compile Include="lower.fs" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="FParsec" Version="1.1.1" />
+    </ItemGroup>
+
+</Project>

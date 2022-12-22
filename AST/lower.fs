@@ -1,4 +1,4 @@
-module Chomp.lower
+module AST.lower
 
 open System.Collections.Generic
 open System.Globalization

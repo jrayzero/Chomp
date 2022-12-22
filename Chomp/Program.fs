@@ -1,8 +1,8 @@
-﻿module CommandLine
+﻿module Chomp.Program
 
-open Chomp.parser
-open Chomp.passes
-open Chomp.ASTVisitor
+open AST.parser
+open AST.ASTVisitor
+open passes
 
 let testKeyword = "test"
 

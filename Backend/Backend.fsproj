@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net7.0</TargetFramework>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\AST\AST.fsproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Compile Include="imperativeIR.fs" />
+      <Compile Include="codegen.fs" />
+    </ItemGroup>
+
+</Project>

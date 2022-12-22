@@ -1,4 +1,4 @@
-module Chomp.builtins
+module AST.builtins
 
 open AST
 
